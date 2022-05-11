@@ -9,8 +9,9 @@ import (
 )
 
 const (
-	Nop  = iota
-	Dial = iota
+	Nop = iota
+	Dial
+	Info
 )
 
 type listenerInfo struct {
@@ -81,11 +82,10 @@ func (l *multiListener) serveIncomingConn(conn net.Conn) {
 	}
 	switch p[0] {
 	case Nop:
-		if err := json.NewEncoder(conn).Encode(listenerInfo{Addresses: l.addresses}); err != nil {
-			conn.Close()
-			return
-		}
 		conn.Read(p)
+		conn.Close()
+	case Info:
+		json.NewEncoder(conn).Encode(listenerInfo{Addresses: l.addresses})
 		conn.Close()
 	case Dial:
 		select {
