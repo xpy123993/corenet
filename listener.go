@@ -27,6 +27,7 @@ type multiListener struct {
 	listeners        []net.Listener
 	reverseListeners []*reverseListener
 
+	inflight sync.WaitGroup
 	mu       sync.Mutex
 	isClosed bool
 }
@@ -67,6 +68,7 @@ func (l *multiListener) Close() error {
 		reverseListener.controlConn.Close()
 	}
 	close(l.done)
+	l.inflight.Wait()
 	close(l.connChan)
 	return nil
 }
@@ -93,9 +95,11 @@ func (l *multiListener) serveReverseListenerConn(conn net.Conn, dialer func() (n
 			}
 		case Dial:
 			remoteConn, err := dialer()
-			if err != nil {
+			if err != nil || l.IsClosed() {
 				return
 			}
+			l.inflight.Add(1)
+			defer l.inflight.Done()
 			select {
 			case <-l.done:
 				remoteConn.Close()
@@ -112,6 +116,7 @@ func (l *multiListener) serveIncomingConn(conn net.Conn) {
 		conn.Close()
 		return
 	}
+
 	switch p[0] {
 	case Nop:
 		conn.Read(p)
@@ -120,6 +125,12 @@ func (l *multiListener) serveIncomingConn(conn net.Conn) {
 		json.NewEncoder(conn).Encode(ListenerInfo{Addresses: l.addresses})
 		conn.Close()
 	case Dial:
+		if l.IsClosed() {
+			conn.Close()
+			return
+		}
+		l.inflight.Add(1)
+		defer l.inflight.Done()
 		select {
 		case <-l.done:
 			conn.Close()
