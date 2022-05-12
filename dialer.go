@@ -3,7 +3,7 @@ package corenet
 import (
 	"fmt"
 	"net"
-	"strings"
+	"net/url"
 	"sync"
 	"time"
 )
@@ -101,8 +101,13 @@ func NewDialer(FallbackAddress []string, Options ...DialerOption) *Dialer {
 }
 
 func (d *Dialer) createConnection(address string) (*clientSession, error) {
-	if strings.HasPrefix(address, "raw://") {
-		return newTCPSession(strings.TrimPrefix(address, "raw://"))
+	uri, err := url.Parse(address)
+	if err != nil {
+		return nil, err
+	}
+	switch uri.Scheme {
+	case "tcp":
+		return newTCPSession(uri.Host)
 	}
 	return nil, fmt.Errorf("unknown protocol: %s", address)
 }

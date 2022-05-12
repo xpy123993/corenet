@@ -50,6 +50,19 @@ func WithListener(listener net.Listener, address []string) ListenerAdapter {
 	}
 }
 
+// WithReverseListener returns a listener adapter that can be used for listener behaves like a client.
+func WithReverseListener(conn net.Conn, dialer func() (net.Conn, error), address []string) ListenerAdapter {
+	return &listenerAdapterApplier{
+		applyFn: func(ml *multiListener) {
+			ml.addresses = append(ml.addresses, address...)
+			ml.reverseListeners = append(ml.reverseListeners, &reverseListener{
+				controlConn: conn,
+				dialer:      dialer,
+			})
+		},
+	}
+}
+
 // CreateTCPPortListenerAdapter creates a listener adapter listening on local port `port`.
 func CreateTCPPortListenerAdapter(port int) (ListenerAdapter, error) {
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
@@ -63,7 +76,7 @@ func CreateTCPPortListenerAdapter(port int) (ListenerAdapter, error) {
 	openPort := lis.Addr().(*net.TCPAddr).Port
 	addressWithProtocol := make([]string, 0, len(addresses))
 	for _, address := range addresses {
-		addressWithProtocol = append(addressWithProtocol, fmt.Sprintf("raw://%s:%d", address, openPort))
+		addressWithProtocol = append(addressWithProtocol, fmt.Sprintf("tcp://%s:%d", address, openPort))
 	}
 	return WithListener(lis, addressWithProtocol), nil
 }

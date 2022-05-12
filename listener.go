@@ -8,16 +8,6 @@ import (
 	"sync"
 )
 
-const (
-	Nop = iota
-	Dial
-	Info
-)
-
-type listenerInfo struct {
-	Addresses []string `json:"addresses"`
-}
-
 type addr struct {
 	str string
 }
@@ -25,11 +15,17 @@ type addr struct {
 func (a *addr) Network() string { return "multi" }
 func (a *addr) String() string  { return a.str }
 
+type reverseListener struct {
+	controlConn net.Conn
+	dialer      func() (net.Conn, error)
+}
+
 type multiListener struct {
-	done      chan struct{}
-	connChan  chan net.Conn
-	addresses []string
-	listeners []net.Listener
+	done             chan struct{}
+	connChan         chan net.Conn
+	addresses        []string
+	listeners        []net.Listener
+	reverseListeners []*reverseListener
 
 	mu       sync.Mutex
 	isClosed bool
@@ -37,11 +33,12 @@ type multiListener struct {
 
 func NewMultiListener(adapters ...ListenerAdapter) net.Listener {
 	l := &multiListener{
-		done:      make(chan struct{}),
-		connChan:  make(chan net.Conn),
-		addresses: []string{},
-		listeners: []net.Listener{},
-		isClosed:  false,
+		done:             make(chan struct{}),
+		connChan:         make(chan net.Conn),
+		addresses:        []string{},
+		listeners:        []net.Listener{},
+		reverseListeners: []*reverseListener{},
+		isClosed:         false,
 	}
 
 	for _, adapter := range adapters {
@@ -49,6 +46,9 @@ func NewMultiListener(adapters ...ListenerAdapter) net.Listener {
 	}
 	for _, listener := range l.listeners {
 		go l.serveListener(listener)
+	}
+	for _, listener := range l.reverseListeners {
+		go l.serveReverseListenerConn(listener.controlConn, listener.dialer)
 	}
 	return l
 }
@@ -63,6 +63,9 @@ func (l *multiListener) Close() error {
 	for _, listener := range l.listeners {
 		listener.Close()
 	}
+	for _, reverseListener := range l.reverseListeners {
+		reverseListener.controlConn.Close()
+	}
 	close(l.done)
 	close(l.connChan)
 	return nil
@@ -72,6 +75,35 @@ func (l *multiListener) IsClosed() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.isClosed
+}
+
+func (l *multiListener) serveReverseListenerConn(conn net.Conn, dialer func() (net.Conn, error)) {
+	p := make([]byte, 1)
+	for !l.IsClosed() {
+		if n, err := conn.Read(p); err != nil || n != 1 {
+			l.Close()
+			return
+		}
+		switch p[0] {
+		case Nop:
+		case Info:
+			if err := json.NewEncoder(conn).Encode(ListenerInfo{Addresses: l.addresses}); err != nil {
+				l.Close()
+				return
+			}
+		case Dial:
+			remoteConn, err := dialer()
+			if err != nil {
+				return
+			}
+			select {
+			case <-l.done:
+				remoteConn.Close()
+				return
+			case l.connChan <- remoteConn:
+			}
+		}
+	}
 }
 
 func (l *multiListener) serveIncomingConn(conn net.Conn) {
@@ -85,7 +117,7 @@ func (l *multiListener) serveIncomingConn(conn net.Conn) {
 		conn.Read(p)
 		conn.Close()
 	case Info:
-		json.NewEncoder(conn).Encode(listenerInfo{Addresses: l.addresses})
+		json.NewEncoder(conn).Encode(ListenerInfo{Addresses: l.addresses})
 		conn.Close()
 	case Dial:
 		select {
