@@ -11,17 +11,17 @@ import (
 )
 
 type BridgeServer struct {
-	mu              sync.RWMutex
-	routeTable      map[string]Session
-	buildSessionFn  func(string, net.Conn) (Session, error)
-	sessionProtocol string
+	mu             sync.RWMutex
+	routeTable     map[string]Session
+	buildSessionFn func(string, net.Conn) (Session, error)
+	sessionAddress string
 }
 
-func NewBridgeServer(SessionFactory func(string, net.Conn) (Session, error), address string) *BridgeServer {
+func NewBridgeServer(SessionFactory func(string, net.Conn) (Session, error), sessionAddress string) *BridgeServer {
 	return &BridgeServer{
-		routeTable:      make(map[string]Session),
-		buildSessionFn:  SessionFactory,
-		sessionProtocol: address,
+		routeTable:     make(map[string]Session),
+		buildSessionFn: SessionFactory,
+		sessionAddress: sessionAddress,
 	}
 }
 
@@ -45,7 +45,7 @@ func (s *BridgeServer) registerChannel(channel string, session Session) error {
 }
 
 func (s *BridgeServer) serveBind(conn net.Conn, channel string) error {
-	if err := json.NewEncoder(conn).Encode(BridgeResponse{Success: true, Payload: s.sessionProtocol}); err != nil {
+	if err := json.NewEncoder(conn).Encode(BridgeResponse{Success: true, Payload: s.sessionAddress}); err != nil {
 		return err
 	}
 
@@ -109,7 +109,7 @@ func (s *BridgeServer) serveConnection(conn net.Conn) {
 		conn.Read(make([]byte, 1))
 	}
 	if result != nil {
-		log.Printf("connection closed with error: %v", result)
+		log.Printf("Connection closed with error: %v", result)
 	}
 }
 

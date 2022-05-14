@@ -81,7 +81,6 @@ func TestRawDialer(t *testing.T) {
 		io.Copy(conn, conn)
 	}()
 
-	log.Print(listener.Addr().String())
 	dialer := corenet.NewDialer([]string{}, corenet.WithDialerChannelInitialAddress(map[string][]string{
 		"test": strings.Split(listener.Addr().String(), ","),
 	}))
