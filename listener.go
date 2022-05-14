@@ -46,10 +46,16 @@ func NewMultiListener(adapters ...ListenerAdapter) net.Listener {
 		adapter.applyTo(l)
 	}
 	for _, listener := range l.listeners {
-		go l.serveListener(listener)
+		go func(listener net.Listener) {
+			l.serveListener(listener)
+			l.Close()
+		}(listener)
 	}
 	for _, listener := range l.reverseListeners {
-		go l.serveReverseListenerConn(listener.controlConn, listener.dialer)
+		go func(listener *reverseListener) {
+			l.serveReverseListenerConn(listener.controlConn, listener.dialer)
+			l.Close()
+		}(listener)
 	}
 	return l
 }
@@ -83,14 +89,12 @@ func (l *multiListener) serveReverseListenerConn(conn net.Conn, dialer func() (n
 	p := make([]byte, 1)
 	for !l.IsClosed() {
 		if n, err := conn.Read(p); err != nil || n != 1 {
-			l.Close()
 			return
 		}
 		switch p[0] {
 		case Nop:
 		case Info:
 			if err := json.NewEncoder(conn).Encode(ListenerInfo{Addresses: l.addresses}); err != nil {
-				l.Close()
 				return
 			}
 		case Dial:

@@ -34,6 +34,7 @@ func (l *InmemoryListener) Close() error {
 	if l.isClosed {
 		return nil
 	}
+	l.isClosed = true
 	close(l.done)
 	close(l.connChan)
 	return nil

@@ -1,6 +1,8 @@
 package corenet
 
 import (
+	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -55,22 +57,20 @@ func (s *clientSession) Dial() (net.Conn, error) {
 	return conn, err
 }
 
-func newTCPSession(address string) (Session, error) {
-	conn, err := net.DialTimeout("tcp", address, 3*time.Second)
+func newSessionWithKeepCloseDetection(nopDialer, dialer func() (net.Conn, error)) (Session, error) {
+	conn, err := nopDialer()
 	if err != nil {
 		return nil, err
 	}
-	n, err := conn.Write([]byte{Nop})
-	if err != nil {
+	if n, err := conn.Write([]byte{Nop}); err != nil || n != 1 {
 		conn.Close()
-		return nil, err
-	}
-	if n != 1 {
-		conn.Close()
+		if err != nil {
+			return nil, err
+		}
 		return nil, fmt.Errorf("cannot finish handshake")
 	}
 	session := clientSession{dialer: func() (net.Conn, error) {
-		conn, err := net.DialTimeout("tcp", address, 3*time.Second)
+		conn, err := dialer()
 		if err != nil {
 			return nil, err
 		}
@@ -86,6 +86,35 @@ func newTCPSession(address string) (Session, error) {
 		session.Close()
 	}()
 	return &session, nil
+}
+
+func newTCPSession(address string) (Session, error) {
+	dialer := func() (net.Conn, error) { return net.DialTimeout("tcp", address, 3*time.Second) }
+	return newSessionWithKeepCloseDetection(dialer, dialer)
+}
+
+func newClientFallbackSession(address, channel string, tlsConfig *tls.Config) (Session, error) {
+	return &clientSession{dialer: func() (net.Conn, error) {
+		conn, err := tls.Dial("tcp", address, tlsConfig)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.NewEncoder(conn).Encode(&BridgeRequest{Type: Dial, Payload: channel}); err != nil {
+			conn.Close()
+			return nil, err
+		}
+
+		resp := BridgeResponse{}
+		if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+			conn.Close()
+			return nil, err
+		}
+		if !resp.Success {
+			conn.Close()
+			return nil, fmt.Errorf(resp.Payload)
+		}
+		return conn, nil
+	}, isClosed: false, done: make(chan struct{})}, nil
 }
 
 func newReverseSession(conn net.Conn, connChan chan net.Conn) (Session, error) {
@@ -109,6 +138,7 @@ func newReverseSession(conn net.Conn, connChan chan net.Conn) (Session, error) {
 type Dialer struct {
 	fallbackAddress      []string
 	updateChannelAddress bool
+	tlsConfig            *tls.Config
 
 	mu               sync.RWMutex
 	channelAddresses map[string][]string
@@ -129,7 +159,7 @@ func NewDialer(FallbackAddress []string, Options ...DialerOption) *Dialer {
 	return &dialer
 }
 
-func (d *Dialer) createConnection(address string) (Session, error) {
+func (d *Dialer) createConnection(address string, channel string) (Session, error) {
 	uri, err := url.Parse(address)
 	if err != nil {
 		return nil, err
@@ -137,6 +167,8 @@ func (d *Dialer) createConnection(address string) (Session, error) {
 	switch uri.Scheme {
 	case "tcp":
 		return newTCPSession(uri.Host)
+	case "ttf":
+		return newClientFallbackSession(uri.Host, channel, d.tlsConfig)
 	}
 	return nil, fmt.Errorf("unknown protocol: %s", address)
 }
@@ -146,7 +178,7 @@ func (d *Dialer) establishChannel(Channel string) (Session, error) {
 	defer d.mu.Unlock()
 	addresses := append(d.channelAddresses[Channel], d.fallbackAddress...)
 	for _, address := range addresses {
-		session, err := d.createConnection(address)
+		session, err := d.createConnection(address, Channel)
 		if err == nil {
 			d.channelSessions[Channel] = session
 			return session, nil

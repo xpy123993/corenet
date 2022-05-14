@@ -11,15 +11,17 @@ import (
 )
 
 type BridgeServer struct {
-	mu             sync.RWMutex
-	routeTable     map[string]Session
-	sessionFactory func(string, net.Conn) (Session, error)
+	mu              sync.RWMutex
+	routeTable      map[string]Session
+	buildSessionFn  func(string, net.Conn) (Session, error)
+	sessionProtocol string
 }
 
-func NewBridgeServer(SessionFactory func(string, net.Conn) (Session, error)) *BridgeServer {
+func NewBridgeServer(SessionFactory func(string, net.Conn) (Session, error), address string) *BridgeServer {
 	return &BridgeServer{
-		routeTable:     make(map[string]Session),
-		sessionFactory: SessionFactory,
+		routeTable:      make(map[string]Session),
+		buildSessionFn:  SessionFactory,
+		sessionProtocol: address,
 	}
 }
 
@@ -43,7 +45,11 @@ func (s *BridgeServer) registerChannel(channel string, session Session) error {
 }
 
 func (s *BridgeServer) serveBind(conn net.Conn, channel string) error {
-	session, err := s.sessionFactory(channel, conn)
+	if err := json.NewEncoder(conn).Encode(BridgeResponse{Success: true, Payload: s.sessionProtocol}); err != nil {
+		return err
+	}
+
+	session, err := s.buildSessionFn(channel, conn)
 	if err != nil {
 		return err
 	}
@@ -99,6 +105,8 @@ func (s *BridgeServer) serveConnection(conn net.Conn) {
 		result = s.serveBind(conn, req.Payload)
 	case Dial:
 		result = s.serveDial(conn, req.Payload)
+	case Nop:
+		conn.Read(make([]byte, 1))
 	}
 	if result != nil {
 		log.Printf("connection closed with error: %v", result)

@@ -1,8 +1,11 @@
 package corenet
 
 import (
+	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net"
+	"net/url"
 )
 
 type listenerAdapterApplier struct {
@@ -60,6 +63,43 @@ func WithReverseListener(conn net.Conn, dialer func() (net.Conn, error), address
 				dialer:      dialer,
 			})
 		},
+	}
+}
+
+func CreatePlainBridgeListener(BridgeServerURL string, Channel string, TLSConfig *tls.Config) (ListenerAdapter, error) {
+	uri, err := url.Parse(BridgeServerURL)
+	if err != nil {
+		return nil, err
+	}
+	switch uri.Scheme {
+	case "ttf":
+		// tcp+tls+fallback
+		controlConn, err := tls.Dial("tcp", uri.Host, TLSConfig)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.NewEncoder(controlConn).Encode(BridgeRequest{Type: Bind, Payload: Channel}); err != nil {
+			controlConn.Close()
+			return nil, err
+		}
+		resp := BridgeResponse{}
+		if err := json.NewDecoder(controlConn).Decode(&resp); err != nil {
+			controlConn.Close()
+			return nil, err
+		}
+		return WithReverseListener(controlConn, func() (net.Conn, error) {
+			conn, err := tls.Dial("tcp", resp.Payload, TLSConfig)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.NewEncoder(conn).Encode(BridgeRequest{Type: Bind, Payload: Channel}); err != nil {
+				conn.Close()
+				return nil, err
+			}
+			return conn, nil
+		}, []string{BridgeServerURL}), nil
+	default:
+		return nil, fmt.Errorf("unknown protocol: %s", uri.Scheme)
 	}
 }
 

@@ -25,13 +25,17 @@ func TestBridgeProto(t *testing.T) {
 	bridgeConnListener := corenet.NewInMemoryListener()
 	bridgeListener := corenet.NewInMemoryListener()
 
-	bridgeServer := corenet.NewBridgeServer(corenet.CreateListenerBaseBridgeProto(bridgeListener))
+	bridgeServer := corenet.NewBridgeServer(corenet.CreateListenerBaseBridgeProto(bridgeListener), "")
 	go bridgeServer.Serve(bridgeConnListener)
 	reverseListenerConn, err := bridgeConnListener.Dial()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := json.NewEncoder(reverseListenerConn).Encode(corenet.BridgeRequest{Type: corenet.Bind, Payload: "test-channel"}); err != nil {
+		t.Fatal(err)
+	}
+	resp := corenet.BridgeResponse{}
+	if err := json.NewDecoder(reverseListenerConn).Decode(&resp); err != nil {
 		t.Fatal(err)
 	}
 
@@ -60,7 +64,7 @@ func TestBridgeProto(t *testing.T) {
 	if err := json.NewEncoder(clientConn).Encode(&corenet.BridgeRequest{Type: corenet.Dial, Payload: "test-channel"}); err != nil {
 		t.Fatal(err)
 	}
-	resp := corenet.BridgeResponse{}
+	resp = corenet.BridgeResponse{}
 	if err := json.NewDecoder(clientConn).Decode(&resp); err != nil {
 		t.Fatal(err)
 	}

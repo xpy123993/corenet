@@ -1,5 +1,7 @@
 package corenet
 
+import "crypto/tls"
+
 type dialerOptionApplier struct {
 	applyFn func(*Dialer)
 }
@@ -30,6 +32,14 @@ func WithDialerUpdateChannelAddress(v bool) DialerOption {
 	return &dialerOptionApplier{
 		applyFn: func(d *Dialer) {
 			d.updateChannelAddress = v
+		},
+	}
+}
+
+func WithDialerBridgeTLSConfig(tlsConfig *tls.Config) DialerOption {
+	return &dialerOptionApplier{
+		applyFn: func(d *Dialer) {
+			d.tlsConfig = tlsConfig
 		},
 	}
 }
