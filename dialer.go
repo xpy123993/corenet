@@ -2,6 +2,7 @@ package corenet
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"sync"
@@ -13,6 +14,14 @@ type clientSession struct {
 
 	mu       sync.RWMutex
 	isClosed bool
+	done     chan struct{}
+}
+
+type Session interface {
+	Close() error
+	Done() chan struct{}
+	IsClosed() bool
+	Dial() (net.Conn, error)
 }
 
 func (s *clientSession) Close() error {
@@ -22,7 +31,14 @@ func (s *clientSession) Close() error {
 		return nil
 	}
 	s.isClosed = true
+	close(s.done)
 	return nil
+}
+
+func (s *clientSession) Done() chan struct{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.done
 }
 
 func (s *clientSession) IsClosed() bool {
@@ -36,20 +52,11 @@ func (s *clientSession) Dial() (net.Conn, error) {
 	if err != nil {
 		s.Close()
 	}
-	n, err := conn.Write([]byte{Dial})
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-	if n != 1 {
-		conn.Close()
-		return nil, fmt.Errorf("cannot finish handshake")
-	}
 	return conn, err
 }
 
-func newSession(dialer func() (net.Conn, error)) (*clientSession, error) {
-	conn, err := dialer()
+func newTCPSession(address string) (Session, error) {
+	conn, err := net.DialTimeout("tcp", address, 3*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -62,19 +69,41 @@ func newSession(dialer func() (net.Conn, error)) (*clientSession, error) {
 		conn.Close()
 		return nil, fmt.Errorf("cannot finish handshake")
 	}
-	session := &clientSession{dialer: dialer}
+	session := clientSession{dialer: func() (net.Conn, error) {
+		conn, err := net.DialTimeout("tcp", address, 3*time.Second)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := conn.Write([]byte{Dial}); err != nil {
+			conn.Close()
+			return nil, err
+		}
+		return conn, nil
+	}, isClosed: false, done: make(chan struct{})}
 	go func() {
 		conn.Read(make([]byte, 1))
 		conn.Close()
 		session.Close()
 	}()
-	return session, nil
+	return &session, nil
 }
 
-func newTCPSession(address string) (*clientSession, error) {
-	return newSession(func() (net.Conn, error) {
-		return net.DialTimeout("tcp", address, 3*time.Second)
-	})
+func newReverseSession(conn net.Conn, connChan chan net.Conn) (Session, error) {
+	if _, err := conn.Write([]byte{Nop}); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	session := clientSession{dialer: func() (net.Conn, error) {
+		if _, err := conn.Write([]byte{Dial}); err != nil {
+			return nil, err
+		}
+		remoteConn, ok := <-connChan
+		if ok {
+			return remoteConn, nil
+		}
+		return nil, io.EOF
+	}, isClosed: false, done: make(chan struct{})}
+	return &session, nil
 }
 
 type Dialer struct {
@@ -83,7 +112,7 @@ type Dialer struct {
 
 	mu               sync.RWMutex
 	channelAddresses map[string][]string
-	channelSessions  map[string]*clientSession
+	channelSessions  map[string]Session
 }
 
 func NewDialer(FallbackAddress []string, Options ...DialerOption) *Dialer {
@@ -92,7 +121,7 @@ func NewDialer(FallbackAddress []string, Options ...DialerOption) *Dialer {
 		updateChannelAddress: true,
 
 		channelAddresses: make(map[string][]string),
-		channelSessions:  make(map[string]*clientSession),
+		channelSessions:  make(map[string]Session),
 	}
 	for _, option := range Options {
 		option.applyTo(&dialer)
@@ -100,7 +129,7 @@ func NewDialer(FallbackAddress []string, Options ...DialerOption) *Dialer {
 	return &dialer
 }
 
-func (d *Dialer) createConnection(address string) (*clientSession, error) {
+func (d *Dialer) createConnection(address string) (Session, error) {
 	uri, err := url.Parse(address)
 	if err != nil {
 		return nil, err
@@ -112,7 +141,7 @@ func (d *Dialer) createConnection(address string) (*clientSession, error) {
 	return nil, fmt.Errorf("unknown protocol: %s", address)
 }
 
-func (d *Dialer) establishChannel(Channel string) (*clientSession, error) {
+func (d *Dialer) establishChannel(Channel string) (Session, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	addresses := append(d.channelAddresses[Channel], d.fallbackAddress...)

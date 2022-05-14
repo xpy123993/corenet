@@ -15,16 +15,19 @@ func echoLoop(t *testing.T, conn net.Conn) {
 	type TestStruct struct {
 		Data string
 	}
+
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := gob.NewEncoder(conn).Encode(TestStruct{Data: "helloworld"}); err != nil {
+		writer := bufio.NewWriter(conn)
+		if err := gob.NewEncoder(writer).Encode(TestStruct{Data: "helloworld"}); err != nil {
 			t.Error(err)
 		}
+		writer.Flush()
 	}()
 	res := TestStruct{}
-	if err := gob.NewDecoder(conn).Decode(&res); err != nil {
+	if err := gob.NewDecoder(bufio.NewReader(conn)).Decode(&res); err != nil {
 		t.Fatal(err)
 	}
 	if res.Data != "helloworld" {
