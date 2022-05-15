@@ -57,8 +57,8 @@ func (l *quicConnListener) Accept() (net.Conn, error) {
 func (l *quicConnListener) Addr() net.Addr { return l.Connection.LocalAddr() }
 func (l *quicConnListener) Close() error   { return l.CloseWithError(0, "") }
 
-// CreateBridgeQuicFallback provides a bridge protocol based on quic.
-func CreateBridgeQuicFallback() BridgeProtocol {
+// CreateBridgeQuicBasedFallback provides a bridge protocol based on quic.
+func CreateBridgeQuicBasedFallback() BridgeProtocol {
 	return &quicBridgeProtocol{}
 }
 
@@ -116,8 +116,8 @@ func (p *quicBridgeProtocol) BridgeSession(Channel string, ClientConn net.Conn, 
 	}
 }
 
-// CreateBridgeServeListener returns the listener that can be used for bridge server serving.
-func CreateBridgeServeListener(Addr string, TLSConfig *tls.Config, QuicConfig *quic.Config) (net.Listener, error) {
+// CreateBridgeQuicListener returns the listener that can be used for bridge server serving.
+func CreateBridgeQuicListener(Addr string, TLSConfig *tls.Config, QuicConfig *quic.Config) (net.Listener, error) {
 	lis, err := quic.ListenAddr(Addr, TLSConfig, QuicConfig)
 	if err != nil {
 		return nil, err

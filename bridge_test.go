@@ -39,7 +39,7 @@ func TestBridgeProto(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	clientListener := corenet.NewMultiListener(corenet.WithReverseListener(reverseListenerConn, func() (net.Conn, error) {
+	clientListener := corenet.NewMultiListener(corenet.WithListenerReverseConn(reverseListenerConn, func() (net.Conn, error) {
 		conn, err := bridgeListener.Dial()
 		if err != nil {
 			return nil, err

@@ -98,7 +98,7 @@ func TestListener(t *testing.T) {
 func TestReverseListener(t *testing.T) {
 	peerA, peerB := net.Pipe()
 	dataA, dataB := net.Pipe()
-	l := corenet.NewMultiListener(corenet.WithReverseListener(peerA, func() (net.Conn, error) {
+	l := corenet.NewMultiListener(corenet.WithListenerReverseConn(peerA, func() (net.Conn, error) {
 		return dataA, nil
 	}, []string{"reverse"}))
 	go func() {
@@ -132,7 +132,7 @@ func TestListenerClose(t *testing.T) {
 }
 
 func TestUnknownProtocol(t *testing.T) {
-	_, err := corenet.CreateFallbackListener("unknown://foobar", "foobar", nil)
+	_, err := corenet.CreateListenerFallbackURLAdapter("unknown://foobar", "foobar", nil)
 	if err == nil || !strings.Contains(err.Error(), "unknown") {
 		t.Errorf("expect an unknown protocol error, got %v", err)
 	}

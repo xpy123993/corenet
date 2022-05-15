@@ -53,8 +53,8 @@ func WithListener(listener net.Listener, address []string) ListenerAdapter {
 	}
 }
 
-// WithReverseListener returns a listener adapter that can be used for listener behaves like a client.
-func WithReverseListener(conn net.Conn, dialer func() (net.Conn, error), address []string) ListenerAdapter {
+// WithListenerReverseConn returns a listener adapter that can be used for listener behaves like a client.
+func WithListenerReverseConn(conn net.Conn, dialer func() (net.Conn, error), address []string) ListenerAdapter {
 	return &listenerAdapterApplier{
 		applyFn: func(ml *multiListener) {
 			ml.addresses = append(ml.addresses, address...)
@@ -66,8 +66,8 @@ func WithReverseListener(conn net.Conn, dialer func() (net.Conn, error), address
 	}
 }
 
-// CreateFallbackListener returns a listener adapter that listens on the specified bridge server.
-func CreateFallbackListener(BridgeServerURL string, Channel string, TLSConfig *tls.Config) (ListenerAdapter, error) {
+// CreateListenerFallbackURLAdapter returns a listener adapter that listens on the specified bridge server.
+func CreateListenerFallbackURLAdapter(BridgeServerURL string, Channel string, TLSConfig *tls.Config) (ListenerAdapter, error) {
 	uri, err := url.Parse(BridgeServerURL)
 	if err != nil {
 		return nil, err
@@ -89,8 +89,8 @@ func CreateFallbackListener(BridgeServerURL string, Channel string, TLSConfig *t
 	}
 }
 
-// CreateTCPPortListenerAdapter creates a listener adapter listening on local port `port`.
-func CreateTCPPortListenerAdapter(port int) (ListenerAdapter, error) {
+// CreateListenerTCPPortAdapter creates a listener adapter listening on local port `port`.
+func CreateListenerTCPPortAdapter(port int) (ListenerAdapter, error) {
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return nil, err

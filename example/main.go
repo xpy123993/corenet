@@ -93,11 +93,11 @@ func serveBridge() error {
 		server := corenet.NewBridgeServer(corenet.CreateBridgeListenerBasedFallback(plainLis), plainLis.Addr().String())
 		return server.Serve(mainLis)
 	case "quicf":
-		lis, err := corenet.CreateBridgeServeListener(serverURL.Host, &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
+		lis, err := corenet.CreateBridgeQuicListener(serverURL.Host, &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
 		if err != nil {
 			return err
 		}
-		server := corenet.NewBridgeServer(corenet.CreateBridgeQuicFallback(), "")
+		server := corenet.NewBridgeServer(corenet.CreateBridgeQuicBasedFallback(), "")
 		return server.Serve(lis)
 	default:
 		return fmt.Errorf("unknown protocol: %s", serverURL.Scheme)
@@ -113,7 +113,7 @@ func main() {
 			log.Printf("Bridge server returns error: %v", err)
 		}
 	case "server":
-		bridgeAdapter, err := corenet.CreateFallbackListener(*bridgeServerURL, *channel, &tls.Config{InsecureSkipVerify: true})
+		bridgeAdapter, err := corenet.CreateListenerFallbackURLAdapter(*bridgeServerURL, *channel, &tls.Config{InsecureSkipVerify: true})
 		if err != nil {
 			log.Fatal(err)
 		}

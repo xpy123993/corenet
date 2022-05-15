@@ -67,7 +67,7 @@ func generateCertificate(t *testing.T) tls.Certificate {
 }
 
 func TestRawDialer(t *testing.T) {
-	l1, err := corenet.CreateTCPPortListenerAdapter(0)
+	l1, err := corenet.CreateListenerTCPPortAdapter(0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestDialerListenerBasedBridge(t *testing.T) {
 	time.Sleep(3 * time.Millisecond)
 	bridgeServerAddr := fmt.Sprintf("ttf://%s", mainListener.Addr().String())
 
-	clientListenerAdapter, err := corenet.CreateFallbackListener(bridgeServerAddr, "test-channel", &tls.Config{
+	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(bridgeServerAddr, "test-channel", &tls.Config{
 		InsecureSkipVerify: true,
 	})
 	if err != nil {
@@ -157,16 +157,16 @@ func TestDialerListenerBasedBridge(t *testing.T) {
 func TestDialerQuicBasedBridge(t *testing.T) {
 	cert := generateCertificate(t)
 
-	bridgeListener, err := corenet.CreateBridgeServeListener(":0", &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
+	bridgeListener, err := corenet.CreateBridgeQuicListener(":0", &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	bridge := corenet.NewBridgeServer(corenet.CreateBridgeQuicFallback(), bridgeListener.Addr().String())
+	bridge := corenet.NewBridgeServer(corenet.CreateBridgeQuicBasedFallback(), bridgeListener.Addr().String())
 	go bridge.Serve(bridgeListener)
 	time.Sleep(3 * time.Millisecond)
 	bridgeServerAddr := fmt.Sprintf("quicf://%s", bridgeListener.Addr().String())
 
-	clientListenerAdapter, err := corenet.CreateFallbackListener(bridgeServerAddr, "test-channel", &tls.Config{
+	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(bridgeServerAddr, "test-channel", &tls.Config{
 		InsecureSkipVerify: true, NextProtos: []string{"quicf"},
 	})
 	if err != nil {
