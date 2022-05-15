@@ -3,8 +3,10 @@ package corenet
 import (
 	"crypto/tls"
 	"fmt"
+	"log"
 	"net"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
@@ -12,6 +14,7 @@ import (
 type clientSession struct {
 	dialer func() (net.Conn, error)
 	infoFn func() (*SessionInfo, error)
+	addr   string
 
 	mu       sync.RWMutex
 	isClosed bool
@@ -21,10 +24,14 @@ type clientSession struct {
 // Session is an interface to provide multiplex connection and record its connection state.
 type Session interface {
 	Close() error
-	Done() chan struct{}
 	IsClosed() bool
+	Done() chan struct{}
+
 	Dial() (net.Conn, error)
 	Info() (*SessionInfo, error)
+
+	ID() string
+	SetID(string)
 }
 
 func (s *clientSession) Close() error {
@@ -69,8 +76,20 @@ func (s *clientSession) Info() (*SessionInfo, error) {
 	return info, err
 }
 
-func newSessionWithKeepCloseDetection(nopDialer, dialer func() (net.Conn, error)) (Session, error) {
-	conn, err := nopDialer()
+func (s *clientSession) ID() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.addr
+}
+
+func (s *clientSession) SetID(v string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.addr = v
+}
+
+func newClientTCPSession(address string) (Session, error) {
+	conn, err := net.DialTimeout("tcp", address, 3*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +101,7 @@ func newSessionWithKeepCloseDetection(nopDialer, dialer func() (net.Conn, error)
 		return nil, fmt.Errorf("cannot finish handshake")
 	}
 	session := clientSession{dialer: func() (net.Conn, error) {
-		conn, err := dialer()
+		conn, err := net.DialTimeout("tcp", address, 3*time.Second)
 		if err != nil {
 			return nil, err
 		}
@@ -92,7 +111,7 @@ func newSessionWithKeepCloseDetection(nopDialer, dialer func() (net.Conn, error)
 		}
 		return conn, nil
 	}, infoFn: func() (*SessionInfo, error) {
-		conn, err := dialer()
+		conn, err := net.DialTimeout("tcp", address, 3*time.Second)
 		if err != nil {
 			return nil, err
 		}
@@ -102,7 +121,7 @@ func newSessionWithKeepCloseDetection(nopDialer, dialer func() (net.Conn, error)
 			return nil, err
 		}
 		return sessionInfo, nil
-	}, isClosed: false, done: make(chan struct{})}
+	}, isClosed: false, done: make(chan struct{}), addr: fmt.Sprintf("tcp://%s", address)}
 	go func() {
 		conn.Read(make([]byte, 1))
 		conn.Close()
@@ -111,18 +130,16 @@ func newSessionWithKeepCloseDetection(nopDialer, dialer func() (net.Conn, error)
 	return &session, nil
 }
 
-func newClientTCPSession(address string) (Session, error) {
-	dialer := func() (net.Conn, error) { return net.DialTimeout("tcp", address, 3*time.Second) }
-	return newSessionWithKeepCloseDetection(dialer, dialer)
-}
-
 // Dialer provides a general client to communicate with MultiListener.
 type Dialer struct {
-	fallbackAddress      []string
-	updateChannelAddress bool
-	tlsConfig            *tls.Config
+	fallbackAddress       []string
+	updateChannelAddress  bool
+	updateChannelInterval time.Duration
+	tlsConfig             *tls.Config
 
 	mu               sync.RWMutex
+	isClosed         bool
+	close            chan struct{}
 	channelAddresses map[string][]string
 	channelSessions  map[string]Session
 }
@@ -135,9 +152,16 @@ func NewDialer(FallbackAddress []string, Options ...DialerOption) *Dialer {
 
 		channelAddresses: make(map[string][]string),
 		channelSessions:  make(map[string]Session),
+
+		isClosed:              false,
+		close:                 make(chan struct{}),
+		updateChannelInterval: 30 * time.Second,
 	}
 	for _, option := range Options {
 		option.applyTo(&dialer)
+	}
+	if dialer.updateChannelAddress {
+		dialer.spawnBackgroundRoutine()
 	}
 	return &dialer
 }
@@ -164,17 +188,99 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 }
 
 func (d *Dialer) establishChannel(Channel string) (Session, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	addresses := append(d.channelAddresses[Channel], d.fallbackAddress...)
+	addresses := make([]string, 0)
+	d.mu.RLock()
+	addresses = append(addresses, d.channelAddresses[Channel]...)
+	addresses = append(addresses, d.fallbackAddress...)
+	curSession := d.channelSessions[Channel]
+	d.mu.RUnlock()
 	for _, address := range addresses {
+		if curSession != nil && curSession.ID() == address {
+			return curSession, nil
+		}
 		session, err := d.createConnection(address, Channel)
 		if err == nil {
-			d.channelSessions[Channel] = session
+			session.SetID(address)
 			return session, nil
 		}
 	}
 	return nil, fmt.Errorf("%s is unavailable", Channel)
+}
+
+func (d *Dialer) tryUpdateSession(Channel string) (Session, error) {
+	session, err := d.establishChannel(Channel)
+	if err != nil {
+		return nil, err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	originalSession := d.channelSessions[Channel]
+	if originalSession == nil || originalSession.ID() != session.ID() {
+		if originalSession != nil {
+			originalSession.Close()
+		}
+		d.channelSessions[Channel] = session
+		log.Printf("Upgrade connection to `%s`: `%s` -> `%s`", Channel, originalSession.ID(), session.ID())
+		return session, nil
+	}
+	session.Close()
+	return originalSession, nil
+}
+
+func (d *Dialer) spawnBackgroundRoutine() {
+	go func() {
+		ticker := time.NewTicker(d.updateChannelInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-d.close:
+				return
+			case <-ticker.C:
+				channelAddresses := make(map[string][]string)
+				d.mu.RLock()
+				for channel, address := range d.channelAddresses {
+					channelAddresses[channel] = append(channelAddresses[channel], address...)
+				}
+				d.mu.RUnlock()
+				for channel := range channelAddresses {
+					d.tryUpdateSession(channel)
+				}
+			}
+		}
+	}()
+}
+
+// DialIgnoreSessionCache dials to `channel` ignoring the session cache.
+func (d *Dialer) DialIgnoreSessionCache(Channel string) (net.Conn, error) {
+	session, err := d.establishChannel(Channel)
+	if err != nil {
+		return nil, err
+	}
+	d.mu.Lock()
+	d.channelSessions[Channel] = session
+	d.mu.Unlock()
+	if d.updateChannelAddress {
+		sessionInfo, err := session.Info()
+		if err != nil {
+			log.Printf("Cannot get session info: %v", err)
+		} else {
+			mayUpdate := false
+			d.mu.Lock()
+			if strings.Join(d.channelAddresses[Channel], ",") != strings.Join(sessionInfo.Addresses, ",") {
+				d.channelAddresses[Channel] = sessionInfo.Addresses
+				mayUpdate = true
+			}
+			d.mu.Unlock()
+			if mayUpdate {
+				updatedSession, err := d.tryUpdateSession(Channel)
+				if err != nil {
+					return updatedSession.Dial()
+				}
+			}
+		}
+	}
+	return session.Dial()
 }
 
 // Dial creates a connection to `channel`.
@@ -185,24 +291,35 @@ func (d *Dialer) Dial(Channel string) (net.Conn, error) {
 	if exist && !session.IsClosed() {
 		return session.Dial()
 	}
-	session, err := d.establishChannel(Channel)
-	if err != nil {
-		return nil, err
-	}
-	return session.Dial()
+	return d.DialIgnoreSessionCache(Channel)
 }
 
 // Info returns the session information of the channel.
-func (d *Dialer) Info(Channel string) (*SessionInfo, error) {
+func (d *Dialer) ID(Channel string) (string, error) {
 	d.mu.RLock()
 	session, exist := d.channelSessions[Channel]
 	d.mu.RUnlock()
 	if exist && !session.IsClosed() {
-		return session.Info()
+		return session.ID(), nil
 	}
 	session, err := d.establishChannel(Channel)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return session.Info()
+	return session.ID(), nil
+}
+
+// Close closes the dialer and all active sessions.
+func (d *Dialer) Close() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.isClosed {
+		return nil
+	}
+	d.isClosed = true
+	close(d.close)
+	for _, session := range d.channelSessions {
+		session.Close()
+	}
+	return nil
 }

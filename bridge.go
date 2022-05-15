@@ -23,15 +23,56 @@ type BridgeServer struct {
 
 	sessionProtocol BridgeProtocol
 	sessionAddress  string
+
+	logError                 bool
+	forceEvictChannelSession bool
+}
+
+// BridgeServerOption specifies a brdige server option.
+type BridgeServerOption interface {
+	applyTo(*BridgeServer)
+}
+
+type bridgeServerOptionApplier struct {
+	applyFn func(*BridgeServer)
+}
+
+func (a *bridgeServerOptionApplier) applyTo(s *BridgeServer) { a.applyFn(s) }
+
+// WithBridgeServerLogError specifies if the bridge server should log error status while serving.
+// By default is false.
+func WithBridgeServerLogError(v bool) BridgeServerOption {
+	return &bridgeServerOptionApplier{
+		applyFn: func(bs *BridgeServer) {
+			bs.logError = v
+		},
+	}
+}
+
+// WithBridgeServerForceEvictChannelSession specifies whether the bridge server should evict old channel session if there is a new one.
+// By default is false, new channel session will be closed with channel already exists error.
+func WithBridgeServerForceEvictChannelSession(v bool) BridgeServerOption {
+	return &bridgeServerOptionApplier{
+		applyFn: func(bs *BridgeServer) {
+			bs.forceEvictChannelSession = v
+		},
+	}
 }
 
 // NewBridgeServer returns a bridge server. `SessionAddress` will be sent to the channel listener.
-func NewBridgeServer(SessionProtocol BridgeProtocol, SessionAddress string) *BridgeServer {
-	return &BridgeServer{
+func NewBridgeServer(SessionProtocol BridgeProtocol, SessionAddress string, Options ...BridgeServerOption) *BridgeServer {
+	bs := &BridgeServer{
 		routeTable:      make(map[string]Session),
 		sessionProtocol: SessionProtocol,
 		sessionAddress:  SessionAddress,
+
+		logError:                 false,
+		forceEvictChannelSession: false,
 	}
+	for _, option := range Options {
+		option.applyTo(bs)
+	}
+	return bs
 }
 
 func (s *BridgeServer) lookupChannel(channel string) Session {
@@ -46,8 +87,12 @@ func (s *BridgeServer) lookupChannel(channel string) Session {
 func (s *BridgeServer) registerChannel(channel string, session Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if session, exist := s.routeTable[channel]; exist && !session.IsClosed() {
-		return fmt.Errorf("channel `%s` is already registered", channel)
+	if session, exist := s.routeTable[channel]; exist {
+		if !session.IsClosed() && !s.forceEvictChannelSession {
+			return fmt.Errorf("channel `%s` is already registered", channel)
+		}
+		session.Close()
+		delete(s.routeTable, channel)
 	}
 	s.routeTable[channel] = session
 	return nil
@@ -124,9 +169,10 @@ func (s *BridgeServer) serveConnection(conn net.Conn) {
 	case Nop:
 		conn.Read(make([]byte, 1))
 	}
-	if result != nil {
+	if s.logError && result != nil {
 		log.Printf("Connection closed with error: %v", result)
 	}
+
 }
 
 // Serve starts the bridge service on the specified listener.

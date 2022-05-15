@@ -90,14 +90,14 @@ func serveBridge() error {
 		if err != nil {
 			log.Fatal(err)
 		}
-		server := corenet.NewBridgeServer(corenet.CreateBridgeListenerBasedFallback(plainLis), plainLis.Addr().String())
+		server := corenet.NewBridgeServer(corenet.CreateBridgeListenerBasedFallback(plainLis), plainLis.Addr().String(), corenet.WithBridgeServerForceEvictChannelSession(true))
 		return server.Serve(mainLis)
 	case "quicf":
 		lis, err := corenet.CreateBridgeQuicListener(serverURL.Host, &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
 		if err != nil {
 			return err
 		}
-		server := corenet.NewBridgeServer(corenet.CreateBridgeQuicBasedFallback(), "")
+		server := corenet.NewBridgeServer(corenet.CreateBridgeQuicBasedFallback(), "", corenet.WithBridgeServerForceEvictChannelSession(true))
 		return server.Serve(lis)
 	default:
 		return fmt.Errorf("unknown protocol: %s", serverURL.Scheme)
@@ -117,7 +117,11 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		listener := corenet.NewMultiListener(bridgeAdapter)
+		directAdapter, err := corenet.CreateListenerTCPPortAdapter(0)
+		if err != nil {
+			log.Fatal(err)
+		}
+		listener := corenet.NewMultiListener(directAdapter, bridgeAdapter)
 		defer listener.Close()
 		for {
 			conn, err := listener.Accept()
@@ -128,7 +132,7 @@ func main() {
 			go io.Copy(conn, conn)
 		}
 	case "client":
-		dialer := corenet.NewDialer([]string{*bridgeServerURL}, corenet.WithDialerBridgeTLSConfig(&tls.Config{InsecureSkipVerify: true}))
+		dialer := corenet.NewDialer([]string{*bridgeServerURL}, corenet.WithDialerBridgeTLSConfig(&tls.Config{InsecureSkipVerify: true}), corenet.WithDialerUpdateChannelInterval(100*time.Millisecond))
 		conn, err := dialer.Dial(*channel)
 		if err != nil {
 			log.Printf("client dial failed: %v", err)
@@ -146,5 +150,6 @@ func main() {
 			return
 		}
 		log.Printf("result: %s", buf[:n])
+
 	}
 }

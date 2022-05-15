@@ -1,6 +1,9 @@
 package corenet
 
-import "crypto/tls"
+import (
+	"crypto/tls"
+	"time"
+)
 
 type dialerOptionApplier struct {
 	applyFn func(*Dialer)
@@ -36,6 +39,16 @@ func WithDialerBridgeTLSConfig(tlsConfig *tls.Config) DialerOption {
 	return &dialerOptionApplier{
 		applyFn: func(d *Dialer) {
 			d.tlsConfig = tlsConfig
+		},
+	}
+}
+
+// WithDialerUpdateChannelInterval specifies the interval to try to upgrade listener session to a higher priority.
+// Only takes effect if update channel address is on, by default it will update every 30 seconds.
+func WithDialerUpdateChannelInterval(duration time.Duration) DialerOption {
+	return &dialerOptionApplier{
+		applyFn: func(d *Dialer) {
+			d.updateChannelInterval = duration
 		},
 	}
 }

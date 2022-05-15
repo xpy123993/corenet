@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+
+	"github.com/lucas-clemente/quic-go"
 )
 
 type listenerAdapterApplier struct {
@@ -83,7 +85,9 @@ func CreateListenerFallbackURLAdapter(BridgeServerURL string, Channel string, TL
 			tlsConfig = *TLSConfig
 		}
 		tlsConfig.NextProtos = append(TLSConfig.NextProtos, "quicf")
-		return newQuicListenerAdapter(uri.Host, Channel, &tlsConfig, nil)
+		return newQuicListenerAdapter(uri.Host, Channel, &tlsConfig, &quic.Config{
+			KeepAlive: true,
+		})
 	default:
 		return nil, fmt.Errorf("unknown protocol: %s", uri.Scheme)
 	}

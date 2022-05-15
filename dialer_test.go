@@ -101,12 +101,12 @@ func TestRawDialer(t *testing.T) {
 		t.Error("cannot reach to the test channel")
 	}
 
-	sessionInfo, err := dialer.Info("test")
+	sessionID, err := dialer.ID("test")
 	if err != nil {
 		t.Error(err)
 	}
-	if len(sessionInfo.Addresses) != len(strings.Split(listener.Addr().String(), ",")) {
-		t.Errorf("address num mismatched")
+	if !strings.Contains(listener.Addr().String(), sessionID) {
+		t.Errorf("expect %s is one of %s", sessionID, listener.Addr().String())
 	}
 }
 
@@ -161,12 +161,12 @@ func TestDialerListenerBasedBridge(t *testing.T) {
 	defer conn.Close()
 	echoLoop(t, conn)
 
-	sessionInfo, err := dialer.Info("test-channel")
+	sessionID, err := dialer.ID("test-channel")
 	if err != nil {
 		t.Error(err)
 	}
-	if len(sessionInfo.Addresses) != 1 || sessionInfo.Addresses[0] != bridgeServerAddr {
-		t.Errorf("expect %s, got %v", bridgeServerAddr, sessionInfo.Addresses)
+	if sessionID != bridgeServerAddr {
+		t.Errorf("expect %s, got %v", bridgeServerAddr, sessionID)
 	}
 }
 
@@ -213,12 +213,70 @@ func TestDialerQuicBasedBridge(t *testing.T) {
 	echoLoop(t, conn)
 	conn.Close()
 
-	sessionInfo, err := dialer.Info("test-channel")
+	sessionID, err := dialer.ID("test-channel")
 	if err != nil {
 		t.Error(err)
 	}
-	if len(sessionInfo.Addresses) != 1 || sessionInfo.Addresses[0] != bridgeServerAddr {
-		t.Errorf("expect %s, got %v", bridgeServerAddr, sessionInfo.Addresses)
+	if sessionID != bridgeServerAddr {
+		t.Errorf("expect %s, got %v", bridgeServerAddr, sessionID)
+	}
+	wg.Wait()
+}
+
+func TestDialerUpgradeSession(t *testing.T) {
+	cert := generateCertificate(t)
+
+	bridgeListener, err := corenet.CreateBridgeQuicListener(":0", &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridge := corenet.NewBridgeServer(corenet.CreateBridgeQuicBasedFallback(), bridgeListener.Addr().String())
+	go bridge.Serve(bridgeListener)
+	time.Sleep(3 * time.Millisecond)
+	bridgeServerAddr := fmt.Sprintf("quicf://%s", bridgeListener.Addr().String())
+
+	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(bridgeServerAddr, "test-channel", &tls.Config{
+		InsecureSkipVerify: true, NextProtos: []string{"quicf"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	directListenerAdapter, err := corenet.CreateListenerTCPPortAdapter(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientListener := corenet.NewMultiListener(directListenerAdapter, clientListenerAdapter)
+	defer clientListener.Close()
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		conn, err := clientListener.Accept()
+		if err != nil {
+			return
+		}
+		io.Copy(conn, conn)
+		conn.Close()
+	}()
+	time.Sleep(3 * time.Millisecond)
+	dialer := corenet.NewDialer([]string{bridgeServerAddr}, corenet.WithDialerBridgeTLSConfig(&tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"quicf"},
+	}), corenet.WithDialerUpdateChannelInterval(time.Millisecond))
+	conn, err := dialer.Dial("test-channel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	echoLoop(t, conn)
+	conn.Close()
+
+	time.Sleep(10 * time.Millisecond)
+	sessionID, err := dialer.ID("test-channel")
+	if err != nil {
+		t.Error(err)
+	}
+	if !strings.HasPrefix(sessionID, "tcp://") {
+		t.Errorf("expect %s to have tcp prefix", sessionID)
 	}
 	wg.Wait()
 }

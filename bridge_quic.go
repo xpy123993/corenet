@@ -70,7 +70,7 @@ func (p *quicBridgeProtocol) InitSession(Channel string, ListenerConn net.Conn) 
 	if !ok {
 		return nil, fmt.Errorf("expect session connection to be quicConn")
 	}
-	return &clientSession{
+	session := &clientSession{
 		done:     make(chan struct{}),
 		isClosed: false,
 		dialer: func() (net.Conn, error) {
@@ -95,7 +95,16 @@ func (p *quicBridgeProtocol) InitSession(Channel string, ListenerConn net.Conn) 
 			}
 			return sessionInfo, nil
 		},
-	}, nil
+	}
+	go func() {
+		select {
+		case <-session.done:
+		case <-packetConn.Context().Done():
+			session.Close()
+		}
+		packetConn.Connection.CloseWithError(1, "")
+	}()
+	return session, nil
 }
 
 func (p *quicBridgeProtocol) BridgeSession(Channel string, ClientConn net.Conn, ListenerSession Session) error {
@@ -178,7 +187,7 @@ func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config) (
 		return nil, err
 	}
 	if !resp.Success {
-		conn.CloseWithError(1, err.Error())
+		conn.CloseWithError(1, resp.Payload)
 		return nil, fmt.Errorf(resp.Payload)
 	}
 

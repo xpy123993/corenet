@@ -10,30 +10,6 @@ import (
 	"sync"
 )
 
-func newReverseSession(conn net.Conn, connChan chan net.Conn) (Session, error) {
-	if _, err := conn.Write([]byte{Nop}); err != nil {
-		conn.Close()
-		return nil, err
-	}
-	session := clientSession{dialer: func() (net.Conn, error) {
-		if _, err := conn.Write([]byte{Dial}); err != nil {
-			return nil, err
-		}
-		remoteConn, ok := <-connChan
-		if ok {
-			return remoteConn, nil
-		}
-		return nil, io.EOF
-	}, infoFn: func() (*SessionInfo, error) {
-		sessionInfo, err := getSessionInfo(conn)
-		if err != nil {
-			return nil, err
-		}
-		return sessionInfo, nil
-	}, isClosed: false, done: make(chan struct{})}
-	return &session, nil
-}
-
 func newClientListenerBasedSession(address, channel string, tlsConfig *tls.Config) (Session, error) {
 	return &clientSession{dialer: func() (net.Conn, error) {
 		conn, err := tls.Dial("tcp", address, tlsConfig)
@@ -129,11 +105,31 @@ func (p *listenerBasedBridgeProtocol) InitSession(Channel string, ListenerConn n
 		connChan = p.connChanMap[Channel]
 	}
 	p.mu.Unlock()
-	session, err := newReverseSession(ListenerConn, connChan)
-	if err != nil {
+	if _, err := ListenerConn.Write([]byte{Nop}); err != nil {
+		ListenerConn.Close()
 		return nil, err
 	}
-	return session, nil
+	session := clientSession{dialer: func() (net.Conn, error) {
+		if _, err := ListenerConn.Write([]byte{Dial}); err != nil {
+			return nil, err
+		}
+		remoteConn, ok := <-connChan
+		if ok {
+			return remoteConn, nil
+		}
+		return nil, io.EOF
+	}, infoFn: func() (*SessionInfo, error) {
+		sessionInfo, err := getSessionInfo(ListenerConn)
+		if err != nil {
+			return nil, err
+		}
+		return sessionInfo, nil
+	}, isClosed: false, done: make(chan struct{})}
+	go func() {
+		<-session.done
+		ListenerConn.Close()
+	}()
+	return &session, nil
 }
 
 func (p *listenerBasedBridgeProtocol) serveListener(lis net.Listener) {
