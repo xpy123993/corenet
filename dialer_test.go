@@ -175,19 +175,15 @@ func TestDialerQuicBasedBridge(t *testing.T) {
 	clientListener := corenet.NewMultiListener(clientListenerAdapter)
 	defer clientListener.Close()
 	wg := sync.WaitGroup{}
+	wg.Add(1)
 	go func() {
-		for {
-			conn, err := clientListener.Accept()
-			if err != nil {
-				return
-			}
-			wg.Add(1)
-			go func(conn net.Conn) {
-				defer wg.Done()
-				io.Copy(conn, conn)
-				conn.Close()
-			}(conn)
+		defer wg.Done()
+		conn, err := clientListener.Accept()
+		if err != nil {
+			return
 		}
+		io.Copy(conn, conn)
+		conn.Close()
 	}()
 	time.Sleep(3 * time.Millisecond)
 	dialer := corenet.NewDialer([]string{bridgeServerAddr}, corenet.WithDialerBridgeTLSConfig(&tls.Config{
