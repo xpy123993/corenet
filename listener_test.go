@@ -2,12 +2,10 @@ package corenet_test
 
 import (
 	"bufio"
-	"crypto/tls"
 	"encoding/gob"
-	"encoding/json"
-	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -118,65 +116,47 @@ func TestReverseListener(t *testing.T) {
 	echoLoop(t, dataB)
 }
 
-func TestBridgeListener(t *testing.T) {
-	cert := generateCertificate(t)
-	mainListener, err := tls.Listen("tcp", ":0", &tls.Config{
-		Certificates: []tls.Certificate{cert},
-	})
-	if err != nil {
-		t.Fatal(err)
+func TestListenerClose(t *testing.T) {
+	lis1 := corenet.NewInMemoryListener()
+	lis2 := corenet.NewInMemoryListener()
+	listener := corenet.NewMultiListener(
+		corenet.WithListener(lis1, []string{"test1"}),
+		corenet.WithListener(lis2, []string{"test2"}),
+	)
+	lis1.Close()
+	time.Sleep(time.Millisecond)
+	if !lis2.IsClosed() {
+		t.Error("expect lis2 to be closed")
 	}
-	bridgeListener, err := tls.Listen("tcp", ":0", &tls.Config{
-		Certificates: []tls.Certificate{cert},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	bridge := corenet.NewBridgeServer(corenet.CreateBridgeListenerBasedFallback(bridgeListener), bridgeListener.Addr().String())
-	go bridge.Serve(mainListener)
-	time.Sleep(30 * time.Millisecond)
+	listener.Close()
+}
 
-	reverseListenerAdapter, err := corenet.CreateFallbackListener(fmt.Sprintf("ttf://%s", mainListener.Addr().String()), "test-channel", &tls.Config{
-		InsecureSkipVerify: true,
-	})
-	if err != nil {
-		t.Fatal(err)
+func TestUnknownProtocol(t *testing.T) {
+	_, err := corenet.CreateFallbackListener("unknown://foobar", "foobar", nil)
+	if err == nil || !strings.Contains(err.Error(), "unknown") {
+		t.Errorf("expect an unknown protocol error, got %v", err)
 	}
-	clientListener := corenet.NewMultiListener(reverseListenerAdapter)
+}
+
+func TestListenerClientConnEmptyClose(t *testing.T) {
+	inmemoryListener := corenet.NewInMemoryListener()
+	listener := corenet.NewMultiListener(corenet.WithListener(inmemoryListener, []string{}))
+	wg := sync.WaitGroup{}
+	wg.Add(1)
 	go func() {
-		for {
-			conn, err := clientListener.Accept()
-			if err != nil {
-				return
-			}
-			go func(conn net.Conn) {
-				io.Copy(conn, conn)
-				conn.Close()
-			}(conn)
+		defer wg.Done()
+		_, err := listener.Accept()
+		if err == nil {
+			t.Error("expect an error here")
 		}
 	}()
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(time.Millisecond)
 
-	clientConn, err := tls.Dial("tcp", mainListener.Addr().String(), &tls.Config{
-		InsecureSkipVerify: true,
-	})
+	conn, err := inmemoryListener.Dial()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer clientConn.Close()
-	if err := json.NewEncoder(clientConn).Encode(corenet.BridgeRequest{Type: corenet.Dial, Payload: "test-channel"}); err != nil {
-		t.Fatal(err)
-	}
-	resp := corenet.BridgeResponse{}
-	if err := json.NewDecoder(clientConn).Decode(&resp); err != nil {
-		t.Fatal(err)
-	}
-
-	if !resp.Success {
-		t.Fatal(resp.Payload)
-	}
-
-	echoLoop(t, clientConn)
-
-	clientListener.Close()
+	conn.Close()
+	listener.Close()
+	wg.Wait()
 }

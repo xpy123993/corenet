@@ -13,15 +13,6 @@ type DialerOption interface {
 	applyTo(*Dialer)
 }
 
-// WithDialerFallbackChannel adds more fallback addresses to the dialer.
-func WithDialerFallbackChannel(address ...string) DialerOption {
-	return &dialerOptionApplier{
-		applyFn: func(d *Dialer) {
-			d.fallbackAddress = address
-		},
-	}
-}
-
 // WithDialerChannelInitialAddress specifies the initial channel addresses before reaching out to any fallback servers.
 func WithDialerChannelInitialAddress(address map[string][]string) DialerOption {
 	return &dialerOptionApplier{

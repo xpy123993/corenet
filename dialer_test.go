@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -101,7 +102,7 @@ func TestRawDialer(t *testing.T) {
 	}
 }
 
-func TestDialerBridge(t *testing.T) {
+func TestDialerListenerBasedBridge(t *testing.T) {
 	cert := generateCertificate(t)
 	mainListener, err := tls.Listen("tcp", ":0", &tls.Config{
 		Certificates: []tls.Certificate{cert},
@@ -153,7 +154,7 @@ func TestDialerBridge(t *testing.T) {
 	echoLoop(t, conn)
 }
 
-func TestDialerBridgeQuic(t *testing.T) {
+func TestDialerQuicBasedBridge(t *testing.T) {
 	cert := generateCertificate(t)
 
 	bridgeListener, err := corenet.CreateBridgeServeListener(":0", &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
@@ -173,13 +174,16 @@ func TestDialerBridgeQuic(t *testing.T) {
 	}
 	clientListener := corenet.NewMultiListener(clientListenerAdapter)
 	defer clientListener.Close()
+	wg := sync.WaitGroup{}
 	go func() {
 		for {
 			conn, err := clientListener.Accept()
 			if err != nil {
 				return
 			}
+			wg.Add(1)
 			go func(conn net.Conn) {
+				defer wg.Done()
 				io.Copy(conn, conn)
 				conn.Close()
 			}(conn)
@@ -190,12 +194,11 @@ func TestDialerBridgeQuic(t *testing.T) {
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"quicf"},
 	}))
-	{
-		conn, err := dialer.Dial("test-channel")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer conn.Close()
-		echoLoop(t, conn)
+	conn, err := dialer.Dial("test-channel")
+	if err != nil {
+		t.Fatal(err)
 	}
+	echoLoop(t, conn)
+	conn.Close()
+	wg.Wait()
 }
