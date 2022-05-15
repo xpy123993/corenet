@@ -273,10 +273,7 @@ func (d *Dialer) DialIgnoreSessionCache(Channel string) (net.Conn, error) {
 			}
 			d.mu.Unlock()
 			if mayUpdate {
-				updatedSession, err := d.tryUpdateSession(Channel)
-				if err != nil {
-					return updatedSession.Dial()
-				}
+				return d.DialIgnoreSessionCache(Channel)
 			}
 		}
 	}
