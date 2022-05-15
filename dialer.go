@@ -192,6 +192,7 @@ func (d *Dialer) Dial(Channel string) (net.Conn, error) {
 	return session.Dial()
 }
 
+// Info returns the session information of the channel.
 func (d *Dialer) Info(Channel string) (*SessionInfo, error) {
 	d.mu.RLock()
 	session, exist := d.channelSessions[Channel]
