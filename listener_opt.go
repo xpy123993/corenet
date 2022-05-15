@@ -78,7 +78,12 @@ func CreateFallbackListener(BridgeServerURL string, Channel string, TLSConfig *t
 		return newClientListenerAdapter(uri.Host, Channel, TLSConfig)
 	case "quicf":
 		// quic+fallback
-		return newQuicListenerAdapter(uri.Host, Channel, TLSConfig, nil)
+		var tlsConfig tls.Config
+		if TLSConfig != nil {
+			tlsConfig = *TLSConfig
+		}
+		tlsConfig.NextProtos = append(TLSConfig.NextProtos, "quicf")
+		return newQuicListenerAdapter(uri.Host, Channel, &tlsConfig, nil)
 	default:
 		return nil, fmt.Errorf("unknown protocol: %s", uri.Scheme)
 	}

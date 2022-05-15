@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"math/big"
@@ -22,6 +23,7 @@ import (
 var (
 	mode                  = flag.String("mode", "", "The mode of the binary, can be bridge, server or client.")
 	bridgeServerURL       = flag.String("bridge-url", "", "The URL of bridge server.")
+	bridgeServerMode      = flag.String("bridge-mode", "ttf", "The mode of the bridge server. Can be ttf or quicf.")
 	bridgeServerPlainAddr = flag.String("bridge-plain-addr", "", "In bridge mode, the second listening address.")
 
 	channel = flag.String("channel", "test-channel", "")
@@ -73,16 +75,14 @@ func generateCertificate() tls.Certificate {
 	return cert
 }
 
-func main() {
-	flag.Parse()
-
-	switch *mode {
-	case "bridge":
-		serverURL, err := url.Parse(*bridgeServerURL)
-		if err != nil {
-			log.Fatal(err)
-		}
-		cert := generateCertificate()
+func serveBridge() error {
+	serverURL, err := url.Parse(*bridgeServerURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	cert := generateCertificate()
+	switch serverURL.Scheme {
+	case "ttf":
 		plainLis, err := tls.Listen("tcp", *bridgeServerPlainAddr, &tls.Config{Certificates: []tls.Certificate{cert}})
 		if err != nil {
 			log.Fatal(err)
@@ -91,8 +91,26 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		bridgeServer := corenet.NewBridgeServer(corenet.CreateBridgeListenerBasedFallback(plainLis), plainLis.Addr().String())
-		if err := bridgeServer.Serve(mainLis); err != nil {
+		server := corenet.NewBridgeServer(corenet.CreateBridgeListenerBasedFallback(plainLis), plainLis.Addr().String())
+		return server.Serve(mainLis)
+	case "quicf":
+		lis, err := corenet.CreateBridgeServeListener(serverURL.Host, &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
+		if err != nil {
+			return err
+		}
+		server := corenet.NewBridgeServer(corenet.CreateBridgeQuicFallback(), "")
+		return server.Serve(lis)
+	default:
+		return fmt.Errorf("unknown protocol: %s", serverURL.Scheme)
+	}
+}
+
+func main() {
+	flag.Parse()
+
+	switch *mode {
+	case "bridge":
+		if err := serveBridge(); err != nil {
 			log.Printf("Bridge server returns error: %v", err)
 		}
 	case "server":

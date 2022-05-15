@@ -129,7 +129,12 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 	case "ttf":
 		return newClientFallbackSession(uri.Host, channel, d.tlsConfig)
 	case "quicf":
-		return newQuicClientSession(uri.Host, channel, d.tlsConfig)
+		var TLSConfig tls.Config
+		if d.tlsConfig != nil {
+			TLSConfig = *d.tlsConfig
+		}
+		TLSConfig.NextProtos = append(TLSConfig.NextProtos, "quicf")
+		return newQuicClientSession(uri.Host, channel, &TLSConfig)
 	}
 	return nil, fmt.Errorf("unknown protocol: %s", address)
 }
