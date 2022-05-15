@@ -291,8 +291,8 @@ func (d *Dialer) Dial(Channel string) (net.Conn, error) {
 	return d.DialIgnoreSessionCache(Channel)
 }
 
-// ID returns the session information of the channel.
-func (d *Dialer) ID(Channel string) (string, error) {
+// GetSessionID returns the session information of the channel.
+func (d *Dialer) GetSessionID(Channel string) (string, error) {
 	d.mu.RLock()
 	session, exist := d.channelSessions[Channel]
 	d.mu.RUnlock()

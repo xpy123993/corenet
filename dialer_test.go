@@ -101,7 +101,7 @@ func TestRawDialer(t *testing.T) {
 		t.Error("cannot reach to the test channel")
 	}
 
-	sessionID, err := dialer.ID("test")
+	sessionID, err := dialer.GetSessionID("test")
 	if err != nil {
 		t.Error(err)
 	}
@@ -161,7 +161,7 @@ func TestDialerListenerBasedBridge(t *testing.T) {
 	defer conn.Close()
 	echoLoop(t, conn)
 
-	sessionID, err := dialer.ID("test-channel")
+	sessionID, err := dialer.GetSessionID("test-channel")
 	if err != nil {
 		t.Error(err)
 	}
@@ -213,7 +213,7 @@ func TestDialerQuicBasedBridge(t *testing.T) {
 	echoLoop(t, conn)
 	conn.Close()
 
-	sessionID, err := dialer.ID("test-channel")
+	sessionID, err := dialer.GetSessionID("test-channel")
 	if err != nil {
 		t.Error(err)
 	}
@@ -271,7 +271,7 @@ func TestDialerUpgradeSession(t *testing.T) {
 	conn.Close()
 
 	time.Sleep(10 * time.Millisecond)
-	sessionID, err := dialer.ID("test-channel")
+	sessionID, err := dialer.GetSessionID("test-channel")
 	if err != nil {
 		t.Error(err)
 	}
