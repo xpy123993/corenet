@@ -100,6 +100,14 @@ func TestRawDialer(t *testing.T) {
 	if !success {
 		t.Error("cannot reach to the test channel")
 	}
+
+	sessionInfo, err := dialer.Info("test")
+	if err != nil {
+		t.Error(err)
+	}
+	if len(sessionInfo.Addresses) != len(strings.Split(listener.Addr().String(), ",")) {
+		t.Errorf("address num mismatched")
+	}
 }
 
 func TestDialerListenerBasedBridge(t *testing.T) {
@@ -152,6 +160,14 @@ func TestDialerListenerBasedBridge(t *testing.T) {
 	}
 	defer conn.Close()
 	echoLoop(t, conn)
+
+	sessionInfo, err := dialer.Info("test-channel")
+	if err != nil {
+		t.Error(err)
+	}
+	if len(sessionInfo.Addresses) != 1 || sessionInfo.Addresses[0] != bridgeServerAddr {
+		t.Errorf("expect %s, got %v", bridgeServerAddr, sessionInfo.Addresses)
+	}
 }
 
 func TestDialerQuicBasedBridge(t *testing.T) {
@@ -196,5 +212,13 @@ func TestDialerQuicBasedBridge(t *testing.T) {
 	}
 	echoLoop(t, conn)
 	conn.Close()
+
+	sessionInfo, err := dialer.Info("test-channel")
+	if err != nil {
+		t.Error(err)
+	}
+	if len(sessionInfo.Addresses) != 1 || sessionInfo.Addresses[0] != bridgeServerAddr {
+		t.Errorf("expect %s, got %v", bridgeServerAddr, sessionInfo.Addresses)
+	}
 	wg.Wait()
 }

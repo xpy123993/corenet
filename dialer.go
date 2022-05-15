@@ -191,3 +191,17 @@ func (d *Dialer) Dial(Channel string) (net.Conn, error) {
 	}
 	return session.Dial()
 }
+
+func (d *Dialer) Info(Channel string) (*SessionInfo, error) {
+	d.mu.RLock()
+	session, exist := d.channelSessions[Channel]
+	d.mu.RUnlock()
+	if exist && !session.IsClosed() {
+		return session.Info()
+	}
+	session, err := d.establishChannel(Channel)
+	if err != nil {
+		return nil, err
+	}
+	return session.Info()
+}
