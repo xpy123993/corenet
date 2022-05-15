@@ -1,5 +1,10 @@
 package corenet
 
+import (
+	"encoding/json"
+	"io"
+)
+
 // The following consts are general signals used by the package.
 const (
 	Nop = iota
@@ -27,8 +32,8 @@ func GetCommandName(Type int) string {
 	}
 }
 
-// ListenerInfo stores all the available addresses of a multi-listener.
-type ListenerInfo struct {
+// SessionInfo stores all the available addresses of a session.
+type SessionInfo struct {
 	Addresses []string `json:"addresses"`
 }
 
@@ -36,10 +41,25 @@ type ListenerInfo struct {
 type BridgeRequest struct {
 	Type    int    `json:"type"`
 	Payload string `json:"payload"`
+
+	DialGetSessionInfo bool `json:"get-sesion-info"`
 }
 
 // BridgeResponse specifies a response from a bridge server.
 type BridgeResponse struct {
 	Success bool   `json:"success"`
 	Payload string `json:"payload"`
+
+	SessionInfo SessionInfo `json:"session-info"`
+}
+
+func getSessionInfo(conn io.ReadWriter) (*SessionInfo, error) {
+	if _, err := conn.Write([]byte{Info}); err != nil {
+		return nil, err
+	}
+	resp := SessionInfo{}
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }

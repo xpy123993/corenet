@@ -78,13 +78,33 @@ func (s *BridgeServer) serveBind(conn net.Conn, channel string) error {
 	return nil
 }
 
-func (s *BridgeServer) serveDial(conn net.Conn, channel string) error {
+func (s *BridgeServer) serveDial(conn net.Conn, req *BridgeRequest) error {
+	channelSession := s.lookupChannel(req.Payload)
+	if channelSession == nil {
+		json.NewEncoder(conn).Encode(BridgeResponse{Success: false, Payload: fmt.Sprintf("channel `%s` not exists", req.Payload)})
+		return fmt.Errorf("channel `%s` not exists", req.Payload)
+	}
+	if err := json.NewEncoder(conn).Encode(BridgeResponse{Success: true}); err != nil {
+		return err
+	}
+	return s.sessionProtocol.BridgeSession(req.Payload, conn, channelSession)
+}
+
+func (s *BridgeServer) serveInfo(conn net.Conn, channel string) error {
 	channelSession := s.lookupChannel(channel)
 	if channelSession == nil {
 		json.NewEncoder(conn).Encode(BridgeResponse{Success: false, Payload: fmt.Sprintf("channel `%s` not exists", channel)})
 		return fmt.Errorf("channel `%s` not exists", channel)
 	}
-	return s.sessionProtocol.BridgeSession(channel, conn, channelSession)
+	resp := BridgeResponse{Success: true}
+	sessionInfo, err := channelSession.Info()
+	if err == nil {
+		resp.SessionInfo = *sessionInfo
+	}
+	if err := json.NewEncoder(conn).Encode(resp); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *BridgeServer) serveConnection(conn net.Conn) {
@@ -98,7 +118,9 @@ func (s *BridgeServer) serveConnection(conn net.Conn) {
 	case Bind:
 		result = s.serveBind(conn, req.Payload)
 	case Dial:
-		result = s.serveDial(conn, req.Payload)
+		result = s.serveDial(conn, &req)
+	case Info:
+		result = s.serveInfo(conn, req.Payload)
 	case Nop:
 		conn.Read(make([]byte, 1))
 	}

@@ -11,6 +11,7 @@ import (
 
 type clientSession struct {
 	dialer func() (net.Conn, error)
+	infoFn func() (*SessionInfo, error)
 
 	mu       sync.RWMutex
 	isClosed bool
@@ -23,6 +24,7 @@ type Session interface {
 	Done() chan struct{}
 	IsClosed() bool
 	Dial() (net.Conn, error)
+	Info() (*SessionInfo, error)
 }
 
 func (s *clientSession) Close() error {
@@ -56,6 +58,17 @@ func (s *clientSession) Dial() (net.Conn, error) {
 	return conn, err
 }
 
+func (s *clientSession) Info() (*SessionInfo, error) {
+	if s.infoFn == nil {
+		return nil, fmt.Errorf("info func unimplemented")
+	}
+	info, err := s.infoFn()
+	if err != nil {
+		s.Close()
+	}
+	return info, err
+}
+
 func newSessionWithKeepCloseDetection(nopDialer, dialer func() (net.Conn, error)) (Session, error) {
 	conn, err := nopDialer()
 	if err != nil {
@@ -78,6 +91,17 @@ func newSessionWithKeepCloseDetection(nopDialer, dialer func() (net.Conn, error)
 			return nil, err
 		}
 		return conn, nil
+	}, infoFn: func() (*SessionInfo, error) {
+		conn, err := dialer()
+		if err != nil {
+			return nil, err
+		}
+		defer conn.Close()
+		sessionInfo, err := getSessionInfo(conn)
+		if err != nil {
+			return nil, err
+		}
+		return sessionInfo, nil
 	}, isClosed: false, done: make(chan struct{})}
 	go func() {
 		conn.Read(make([]byte, 1))
@@ -87,7 +111,7 @@ func newSessionWithKeepCloseDetection(nopDialer, dialer func() (net.Conn, error)
 	return &session, nil
 }
 
-func newTCPSession(address string) (Session, error) {
+func newClientTCPSession(address string) (Session, error) {
 	dialer := func() (net.Conn, error) { return net.DialTimeout("tcp", address, 3*time.Second) }
 	return newSessionWithKeepCloseDetection(dialer, dialer)
 }
@@ -125,16 +149,16 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 	}
 	switch uri.Scheme {
 	case "tcp":
-		return newTCPSession(uri.Host)
+		return newClientTCPSession(uri.Host)
 	case "ttf":
-		return newClientFallbackSession(uri.Host, channel, d.tlsConfig)
+		return newClientListenerBasedSession(uri.Host, channel, d.tlsConfig)
 	case "quicf":
 		var TLSConfig tls.Config
 		if d.tlsConfig != nil {
 			TLSConfig = *d.tlsConfig
 		}
 		TLSConfig.NextProtos = append(TLSConfig.NextProtos, "quicf")
-		return newQuicClientSession(uri.Host, channel, &TLSConfig)
+		return newClientQuicBasedSession(uri.Host, channel, &TLSConfig)
 	}
 	return nil, fmt.Errorf("unknown protocol: %s", address)
 }

@@ -95,7 +95,7 @@ func (l *multiListener) serveReverseListenerConn(conn net.Conn, dialer func() (n
 		switch p[0] {
 		case Nop:
 		case Info:
-			if err := json.NewEncoder(conn).Encode(ListenerInfo{Addresses: l.addresses}); err != nil {
+			if err := json.NewEncoder(conn).Encode(SessionInfo{Addresses: l.addresses}); err != nil {
 				return
 			}
 		case Dial:
@@ -127,7 +127,7 @@ func (l *multiListener) serveIncomingConn(conn net.Conn) {
 		conn.Read(p)
 		conn.Close()
 	case Info:
-		json.NewEncoder(conn).Encode(ListenerInfo{Addresses: l.addresses})
+		json.NewEncoder(conn).Encode(SessionInfo{Addresses: l.addresses})
 		conn.Close()
 	case Dial:
 		if l.IsClosed() {

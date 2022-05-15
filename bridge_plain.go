@@ -24,11 +24,17 @@ func newReverseSession(conn net.Conn, connChan chan net.Conn) (Session, error) {
 			return remoteConn, nil
 		}
 		return nil, io.EOF
+	}, infoFn: func() (*SessionInfo, error) {
+		sessionInfo, err := getSessionInfo(conn)
+		if err != nil {
+			return nil, err
+		}
+		return sessionInfo, nil
 	}, isClosed: false, done: make(chan struct{})}
 	return &session, nil
 }
 
-func newClientFallbackSession(address, channel string, tlsConfig *tls.Config) (Session, error) {
+func newClientListenerBasedSession(address, channel string, tlsConfig *tls.Config) (Session, error) {
 	return &clientSession{dialer: func() (net.Conn, error) {
 		conn, err := tls.Dial("tcp", address, tlsConfig)
 		if err != nil {
@@ -49,6 +55,23 @@ func newClientFallbackSession(address, channel string, tlsConfig *tls.Config) (S
 			return nil, fmt.Errorf(resp.Payload)
 		}
 		return conn, nil
+	}, infoFn: func() (*SessionInfo, error) {
+		conn, err := tls.Dial("tcp", address, tlsConfig)
+		if err != nil {
+			return nil, err
+		}
+		defer conn.Close()
+		if err := json.NewEncoder(conn).Encode(&BridgeRequest{Type: Info, Payload: channel}); err != nil {
+			return nil, err
+		}
+		resp := BridgeResponse{}
+		if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+			return nil, err
+		}
+		if !resp.Success {
+			return nil, fmt.Errorf(resp.Payload)
+		}
+		return &resp.SessionInfo, nil
 	}, isClosed: false, done: make(chan struct{})}, nil
 }
 
@@ -87,14 +110,9 @@ type listenerBasedBridgeProtocol struct {
 func (p *listenerBasedBridgeProtocol) BridgeSession(Channel string, ClientConn net.Conn, ListenerSession Session) error {
 	remoteConn, err := ListenerSession.Dial()
 	if err != nil {
-		json.NewEncoder(ClientConn).Encode(BridgeResponse{Success: false, Payload: "Connection is reset"})
 		return fmt.Errorf("channel connection is reset")
 	}
 	defer remoteConn.Close()
-
-	if err := json.NewEncoder(ClientConn).Encode(BridgeResponse{Success: true}); err != nil {
-		return err
-	}
 
 	ctx, cancelFn := context.WithCancel(context.Background())
 	go func() { io.Copy(ClientConn, remoteConn); cancelFn() }()
@@ -111,7 +129,11 @@ func (p *listenerBasedBridgeProtocol) InitSession(Channel string, ListenerConn n
 		connChan = p.connChanMap[Channel]
 	}
 	p.mu.Unlock()
-	return newReverseSession(ListenerConn, connChan)
+	session, err := newReverseSession(ListenerConn, connChan)
+	if err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 func (p *listenerBasedBridgeProtocol) serveListener(lis net.Listener) {

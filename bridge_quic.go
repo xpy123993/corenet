@@ -80,14 +80,25 @@ func (p *quicBridgeProtocol) InitSession(Channel string, ListenerConn net.Conn) 
 			}
 			return &quicConn{Stream: stream, Connection: packetConn.Connection}, nil
 		},
+		infoFn: func() (*SessionInfo, error) {
+			addrStream, err := packetConn.Connection.OpenStream()
+			if err != nil {
+				return nil, err
+			}
+			defer func() {
+				addrStream.CancelRead(0)
+				addrStream.Close()
+			}()
+			sessionInfo, err := getSessionInfo(addrStream)
+			if err != nil {
+				return nil, err
+			}
+			return sessionInfo, nil
+		},
 	}, nil
 }
 
 func (p *quicBridgeProtocol) BridgeSession(Channel string, ClientConn net.Conn, ListenerSession Session) error {
-	if err := json.NewEncoder(ClientConn).Encode(BridgeResponse{Success: true}); err != nil {
-		return err
-	}
-
 	clientQuicConn, ok := ClientConn.(*quicConn)
 	if !ok {
 		return fmt.Errorf("expect client connection to be quicConn")
@@ -112,7 +123,6 @@ func (p *quicBridgeProtocol) BridgeSession(Channel string, ClientConn net.Conn, 
 			go func() { io.Copy(listenerConn, clientConn); cancelFn() }()
 			<-ctx.Done()
 		}(clientConn)
-
 	}
 }
 
@@ -146,7 +156,7 @@ func newQuicListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, QuicCon
 	return WithListener(&quicConnListener{conn}, []string{fmt.Sprintf("quicf://%s", Addr)}), nil
 }
 
-func newQuicClientSession(address, channel string, tlsConfig *tls.Config) (Session, error) {
+func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config) (Session, error) {
 	conn, err := quic.DialAddr(address, tlsConfig, nil)
 	if err != nil {
 		return nil, err
@@ -183,5 +193,19 @@ func newQuicClientSession(address, channel string, tlsConfig *tls.Config) (Sessi
 			return nil, err
 		}
 		return &quicConn{Stream: stream, Connection: conn}, nil
+	}, infoFn: func() (*SessionInfo, error) {
+		stream, err := conn.OpenStream()
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			stream.CancelRead(1)
+			stream.Close()
+		}()
+		sessionInfo, err := getSessionInfo(stream)
+		if err != nil {
+			return nil, err
+		}
+		return sessionInfo, nil
 	}, isClosed: false, done: make(chan struct{})}, nil
 }
