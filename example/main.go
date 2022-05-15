@@ -23,7 +23,6 @@ import (
 var (
 	mode                  = flag.String("mode", "", "The mode of the binary, can be bridge, server or client.")
 	bridgeServerURL       = flag.String("bridge-url", "", "The URL of bridge server.")
-	bridgeServerMode      = flag.String("bridge-mode", "ttf", "The mode of the bridge server. Can be ttf or quicf.")
 	bridgeServerPlainAddr = flag.String("bridge-plain-addr", "", "In bridge mode, the second listening address.")
 
 	channel = flag.String("channel", "test-channel", "")
@@ -42,7 +41,7 @@ func generateCertificate() tls.Certificate {
 	template := x509.Certificate{
 		SerialNumber: serialID,
 		Subject: pkix.Name{
-			CommonName: "test certificate",
+			CommonName: "Self-signed bridge certificate",
 		},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(time.Hour),
