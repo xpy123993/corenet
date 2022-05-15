@@ -132,11 +132,11 @@ func TestBridgeListener(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bridge := corenet.NewBridgeServer(corenet.CreateListenerBaseBridgeProto(bridgeListener), bridgeListener.Addr().String())
+	bridge := corenet.NewBridgeServer(corenet.CreateBridgeListenerBasedFallback(bridgeListener), bridgeListener.Addr().String())
 	go bridge.Serve(mainListener)
 	time.Sleep(30 * time.Millisecond)
 
-	reverseListenerAdapter, err := corenet.CreatePlainBridgeListener(fmt.Sprintf("ttf://%s", mainListener.Addr().String()), "test-channel", &tls.Config{
+	reverseListenerAdapter, err := corenet.CreateFallbackListener(fmt.Sprintf("ttf://%s", mainListener.Addr().String()), "test-channel", &tls.Config{
 		InsecureSkipVerify: true,
 	})
 	if err != nil {

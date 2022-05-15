@@ -1,5 +1,6 @@
 package corenet
 
+// The following consts are general signals used by the package.
 const (
 	Nop = iota
 	Dial
@@ -8,6 +9,7 @@ const (
 	Info
 )
 
+// GetCommandName returns the name of the signal.
 func GetCommandName(Type int) string {
 	switch Type {
 	case Nop:
@@ -25,15 +27,18 @@ func GetCommandName(Type int) string {
 	}
 }
 
+// ListenerInfo stores all the available addresses of a multi-listener.
 type ListenerInfo struct {
 	Addresses []string `json:"addresses"`
 }
 
+// BridgeRequest specifies a request to a bridge server.
 type BridgeRequest struct {
 	Type    int    `json:"type"`
 	Payload string `json:"payload"`
 }
 
+// BridgeResponse specifies a response from a bridge server.
 type BridgeResponse struct {
 	Success bool   `json:"success"`
 	Payload string `json:"payload"`

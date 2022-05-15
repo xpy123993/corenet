@@ -38,6 +38,7 @@ func getAllAccessibleIPs() ([]string, error) {
 	return ret, nil
 }
 
+// ListenerAdapter specifies a listener that can be used for multi-listener.
 type ListenerAdapter interface {
 	applyTo(*multiListener)
 }
@@ -65,7 +66,8 @@ func WithReverseListener(conn net.Conn, dialer func() (net.Conn, error), address
 	}
 }
 
-func CreatePlainBridgeListener(BridgeServerURL string, Channel string, TLSConfig *tls.Config) (ListenerAdapter, error) {
+// CreateFallbackListener returns a listener adapter that listens on the specified bridge server.
+func CreateFallbackListener(BridgeServerURL string, Channel string, TLSConfig *tls.Config) (ListenerAdapter, error) {
 	uri, err := url.Parse(BridgeServerURL)
 	if err != nil {
 		return nil, err

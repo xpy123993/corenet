@@ -78,7 +78,8 @@ func newClientListenerAdapter(address, channel string, TLSConfig *tls.Config) (L
 	}, []string{fmt.Sprintf("ttf://%s", address)}), nil
 }
 
-func CreateListenerBaseBridgeProto(lis net.Listener) func(string, net.Conn) (Session, error) {
+// CreateBridgeListenerBasedFallback provides a bridge protocol for the bridge server.
+func CreateBridgeListenerBasedFallback(lis net.Listener) func(string, net.Conn) (Session, error) {
 	mu := sync.Mutex{}
 	connChanMap := make(map[string]chan net.Conn)
 	go func() {

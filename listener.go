@@ -32,6 +32,7 @@ type multiListener struct {
 	isClosed bool
 }
 
+// NewMultiListener returns a general listener that listens on all adapters.
 func NewMultiListener(adapters ...ListenerAdapter) net.Listener {
 	l := &multiListener{
 		done:             make(chan struct{}),

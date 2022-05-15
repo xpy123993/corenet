@@ -10,6 +10,7 @@ import (
 	"sync"
 )
 
+// BridgeServer redirects traffic between client and listener.
 type BridgeServer struct {
 	mu             sync.RWMutex
 	routeTable     map[string]Session
@@ -17,11 +18,12 @@ type BridgeServer struct {
 	sessionAddress string
 }
 
-func NewBridgeServer(SessionFactory func(string, net.Conn) (Session, error), sessionAddress string) *BridgeServer {
+// NewBridgeServer returns a bridge server. `SessionAddress` will be sent to the channel listener.
+func NewBridgeServer(SessionFactory func(string, net.Conn) (Session, error), SessionAddress string) *BridgeServer {
 	return &BridgeServer{
 		routeTable:     make(map[string]Session),
 		buildSessionFn: SessionFactory,
-		sessionAddress: sessionAddress,
+		sessionAddress: SessionAddress,
 	}
 }
 
@@ -113,6 +115,7 @@ func (s *BridgeServer) serveConnection(conn net.Conn) {
 	}
 }
 
+// Serve starts the bridge service on the specified listener.
 func (s *BridgeServer) Serve(listener net.Listener) error {
 	for {
 		conn, err := listener.Accept()

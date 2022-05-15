@@ -56,7 +56,8 @@ func (l *quicConnListener) Accept() (net.Conn, error) {
 func (l *quicConnListener) Addr() net.Addr { return l.Connection.LocalAddr() }
 func (l *quicConnListener) Close() error   { return l.CloseWithError(0, "") }
 
-func CreateQuicSessionFactory() func(string, net.Conn) (Session, error) {
+// CreateBridgeQuicFallback provides a bridge protocol based on quic.
+func CreateBridgeQuicFallback() func(string, net.Conn) (Session, error) {
 	return func(s string, c net.Conn) (Session, error) {
 		packetConn, ok := c.(*quicConn)
 		if !ok {
@@ -76,7 +77,8 @@ func CreateQuicSessionFactory() func(string, net.Conn) (Session, error) {
 	}
 }
 
-func CreateQuicBridgeListener(Addr string, TLSConfig *tls.Config, QuicConfig *quic.Config) (net.Listener, error) {
+// CreateBridgeServeListener returns the listener that can be used for bridge server serving.
+func CreateBridgeServeListener(Addr string, TLSConfig *tls.Config, QuicConfig *quic.Config) (net.Listener, error) {
 	lis, err := quic.ListenAddr(Addr, TLSConfig, QuicConfig)
 	if err != nil {
 		return nil, err

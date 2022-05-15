@@ -91,12 +91,12 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		bridgeServer := corenet.NewBridgeServer(corenet.CreateListenerBaseBridgeProto(plainLis), plainLis.Addr().String())
+		bridgeServer := corenet.NewBridgeServer(corenet.CreateBridgeListenerBasedFallback(plainLis), plainLis.Addr().String())
 		if err := bridgeServer.Serve(mainLis); err != nil {
 			log.Printf("Bridge server returns error: %v", err)
 		}
 	case "server":
-		bridgeAdapter, err := corenet.CreatePlainBridgeListener(*bridgeServerURL, *channel, &tls.Config{InsecureSkipVerify: true})
+		bridgeAdapter, err := corenet.CreateFallbackListener(*bridgeServerURL, *channel, &tls.Config{InsecureSkipVerify: true})
 		if err != nil {
 			log.Fatal(err)
 		}

@@ -25,7 +25,7 @@ func TestBridgeProto(t *testing.T) {
 	bridgeConnListener := corenet.NewInMemoryListener()
 	bridgeListener := corenet.NewInMemoryListener()
 
-	bridgeServer := corenet.NewBridgeServer(corenet.CreateListenerBaseBridgeProto(bridgeListener), "")
+	bridgeServer := corenet.NewBridgeServer(corenet.CreateBridgeListenerBasedFallback(bridgeListener), "")
 	go bridgeServer.Serve(bridgeConnListener)
 	reverseListenerConn, err := bridgeConnListener.Dial()
 	if err != nil {

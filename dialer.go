@@ -17,6 +17,7 @@ type clientSession struct {
 	done     chan struct{}
 }
 
+// Session is an interface to provide multiplex connection and record its connection state.
 type Session interface {
 	Close() error
 	Done() chan struct{}
@@ -91,6 +92,7 @@ func newTCPSession(address string) (Session, error) {
 	return newSessionWithKeepCloseDetection(dialer, dialer)
 }
 
+// Dialer provides a general client to communicate with MultiListener.
 type Dialer struct {
 	fallbackAddress      []string
 	updateChannelAddress bool
@@ -101,6 +103,7 @@ type Dialer struct {
 	channelSessions  map[string]Session
 }
 
+// NewDialer returns a dialer.
 func NewDialer(FallbackAddress []string, Options ...DialerOption) *Dialer {
 	dialer := Dialer{
 		fallbackAddress:      FallbackAddress,
@@ -145,6 +148,7 @@ func (d *Dialer) establishChannel(Channel string) (Session, error) {
 	return nil, fmt.Errorf("%s is unavailable", Channel)
 }
 
+// Dial creates a connection to `channel`.
 func (d *Dialer) Dial(Channel string) (net.Conn, error) {
 	d.mu.RLock()
 	session, exist := d.channelSessions[Channel]
