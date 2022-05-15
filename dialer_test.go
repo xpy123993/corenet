@@ -152,3 +152,48 @@ func TestDialerBridge(t *testing.T) {
 	defer conn.Close()
 	echoLoop(t, conn)
 }
+
+func TestDialerBridgeQuic(t *testing.T) {
+	cert := generateCertificate(t)
+
+	bridgeListener, err := corenet.CreateQuicBridgeListener(":0", &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridge := corenet.NewBridgeServer(corenet.CreateQuicSessionFactory(), bridgeListener.Addr().String())
+	go bridge.Serve(bridgeListener)
+	time.Sleep(3 * time.Millisecond)
+	bridgeServerAddr := fmt.Sprintf("quicf://%s", bridgeListener.Addr().String())
+
+	clientListenerAdapter, err := corenet.CreatePlainBridgeListener(bridgeServerAddr, "test-channel", &tls.Config{
+		InsecureSkipVerify: true, NextProtos: []string{"quicf"},
+	})
+	if err != nil {
+		t.Error(err)
+	}
+	clientListener := corenet.NewMultiListener(clientListenerAdapter)
+	defer clientListener.Close()
+	go func() {
+		for {
+			conn, err := clientListener.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				io.Copy(conn, conn)
+				conn.Close()
+			}(conn)
+		}
+	}()
+	time.Sleep(3 * time.Millisecond)
+	dialer := corenet.NewDialer([]string{bridgeServerAddr}, corenet.WithDialerBridgeTLSConfig(&tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"quicf"},
+	}))
+	conn, err := dialer.Dial("test-channel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	echoLoop(t, conn)
+}

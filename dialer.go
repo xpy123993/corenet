@@ -2,9 +2,7 @@ package corenet
 
 import (
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/url"
 	"sync"
@@ -93,48 +91,6 @@ func newTCPSession(address string) (Session, error) {
 	return newSessionWithKeepCloseDetection(dialer, dialer)
 }
 
-func newClientFallbackSession(address, channel string, tlsConfig *tls.Config) (Session, error) {
-	return &clientSession{dialer: func() (net.Conn, error) {
-		conn, err := tls.Dial("tcp", address, tlsConfig)
-		if err != nil {
-			return nil, err
-		}
-		if err := json.NewEncoder(conn).Encode(&BridgeRequest{Type: Dial, Payload: channel}); err != nil {
-			conn.Close()
-			return nil, err
-		}
-
-		resp := BridgeResponse{}
-		if err := json.NewDecoder(conn).Decode(&resp); err != nil {
-			conn.Close()
-			return nil, err
-		}
-		if !resp.Success {
-			conn.Close()
-			return nil, fmt.Errorf(resp.Payload)
-		}
-		return conn, nil
-	}, isClosed: false, done: make(chan struct{})}, nil
-}
-
-func newReverseSession(conn net.Conn, connChan chan net.Conn) (Session, error) {
-	if _, err := conn.Write([]byte{Nop}); err != nil {
-		conn.Close()
-		return nil, err
-	}
-	session := clientSession{dialer: func() (net.Conn, error) {
-		if _, err := conn.Write([]byte{Dial}); err != nil {
-			return nil, err
-		}
-		remoteConn, ok := <-connChan
-		if ok {
-			return remoteConn, nil
-		}
-		return nil, io.EOF
-	}, isClosed: false, done: make(chan struct{})}
-	return &session, nil
-}
-
 type Dialer struct {
 	fallbackAddress      []string
 	updateChannelAddress bool
@@ -169,6 +125,8 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 		return newTCPSession(uri.Host)
 	case "ttf":
 		return newClientFallbackSession(uri.Host, channel, d.tlsConfig)
+	case "quicf":
+		return newQuicClientSession(uri.Host, channel, d.tlsConfig)
 	}
 	return nil, fmt.Errorf("unknown protocol: %s", address)
 }

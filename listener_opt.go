@@ -2,7 +2,6 @@ package corenet
 
 import (
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/url"
@@ -74,30 +73,10 @@ func CreatePlainBridgeListener(BridgeServerURL string, Channel string, TLSConfig
 	switch uri.Scheme {
 	case "ttf":
 		// tcp+tls+fallback
-		controlConn, err := tls.Dial("tcp", uri.Host, TLSConfig)
-		if err != nil {
-			return nil, err
-		}
-		if err := json.NewEncoder(controlConn).Encode(BridgeRequest{Type: Bind, Payload: Channel}); err != nil {
-			controlConn.Close()
-			return nil, err
-		}
-		resp := BridgeResponse{}
-		if err := json.NewDecoder(controlConn).Decode(&resp); err != nil {
-			controlConn.Close()
-			return nil, err
-		}
-		return WithReverseListener(controlConn, func() (net.Conn, error) {
-			conn, err := tls.Dial("tcp", resp.Payload, TLSConfig)
-			if err != nil {
-				return nil, err
-			}
-			if err := json.NewEncoder(conn).Encode(BridgeRequest{Type: Bind, Payload: Channel}); err != nil {
-				conn.Close()
-				return nil, err
-			}
-			return conn, nil
-		}, []string{BridgeServerURL}), nil
+		return newClientListenerAdapter(uri.Host, Channel, TLSConfig)
+	case "quicf":
+		// quic+fallback
+		return newQuicListenerAdapter(uri.Host, Channel, TLSConfig, nil)
 	default:
 		return nil, fmt.Errorf("unknown protocol: %s", uri.Scheme)
 	}
