@@ -1,29 +1,36 @@
 package corenet
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"sync"
 )
 
+// BridgeProtocol specifies the bridge protocol.
+type BridgeProtocol interface {
+	// InitSession converts a listener connection to a session.
+	InitSession(Channel string, ListenerConn net.Conn) (Session, error)
+	// BridgeSession serves builds connections between a client connection and a listener session.
+	BridgeSession(Channel string, ClientConn net.Conn, ListenerSession Session) error
+}
+
 // BridgeServer redirects traffic between client and listener.
 type BridgeServer struct {
-	mu             sync.RWMutex
-	routeTable     map[string]Session
-	buildSessionFn func(string, net.Conn) (Session, error)
-	sessionAddress string
+	mu         sync.RWMutex
+	routeTable map[string]Session
+
+	sessionProtocol BridgeProtocol
+	sessionAddress  string
 }
 
 // NewBridgeServer returns a bridge server. `SessionAddress` will be sent to the channel listener.
-func NewBridgeServer(SessionFactory func(string, net.Conn) (Session, error), SessionAddress string) *BridgeServer {
+func NewBridgeServer(SessionProtocol BridgeProtocol, SessionAddress string) *BridgeServer {
 	return &BridgeServer{
-		routeTable:     make(map[string]Session),
-		buildSessionFn: SessionFactory,
-		sessionAddress: SessionAddress,
+		routeTable:      make(map[string]Session),
+		sessionProtocol: SessionProtocol,
+		sessionAddress:  SessionAddress,
 	}
 }
 
@@ -51,7 +58,7 @@ func (s *BridgeServer) serveBind(conn net.Conn, channel string) error {
 		return err
 	}
 
-	session, err := s.buildSessionFn(channel, conn)
+	session, err := s.sessionProtocol.InitSession(channel, conn)
 	if err != nil {
 		return err
 	}
@@ -77,22 +84,7 @@ func (s *BridgeServer) serveDial(conn net.Conn, channel string) error {
 		json.NewEncoder(conn).Encode(BridgeResponse{Success: false, Payload: fmt.Sprintf("channel `%s` not exists", channel)})
 		return fmt.Errorf("channel `%s` not exists", channel)
 	}
-	remoteConn, err := channelSession.Dial()
-	if err != nil {
-		json.NewEncoder(conn).Encode(BridgeResponse{Success: false, Payload: fmt.Sprintf("remote connection to %s is reset", channel)})
-		return fmt.Errorf("channel connection is reset")
-	}
-	defer remoteConn.Close()
-
-	if err := json.NewEncoder(conn).Encode(BridgeResponse{Success: true}); err != nil {
-		return err
-	}
-
-	ctx, cancelFn := context.WithCancel(context.Background())
-	go func() { io.Copy(conn, remoteConn); cancelFn() }()
-	go func() { io.Copy(remoteConn, conn); cancelFn() }()
-	<-ctx.Done()
-	return nil
+	return s.sessionProtocol.BridgeSession(channel, conn, channelSession)
 }
 
 func (s *BridgeServer) serveConnection(conn net.Conn) {

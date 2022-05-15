@@ -190,10 +190,12 @@ func TestDialerBridgeQuic(t *testing.T) {
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"quicf"},
 	}))
-	conn, err := dialer.Dial("test-channel")
-	if err != nil {
-		t.Fatal(err)
+	{
+		conn, err := dialer.Dial("test-channel")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		echoLoop(t, conn)
 	}
-	defer conn.Close()
-	echoLoop(t, conn)
 }

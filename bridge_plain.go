@@ -1,6 +1,7 @@
 package corenet
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -78,15 +79,47 @@ func newClientListenerAdapter(address, channel string, TLSConfig *tls.Config) (L
 	}, []string{fmt.Sprintf("ttf://%s", address)}), nil
 }
 
-// CreateBridgeListenerBasedFallback provides a bridge protocol for the bridge server.
-func CreateBridgeListenerBasedFallback(lis net.Listener) func(string, net.Conn) (Session, error) {
-	mu := sync.Mutex{}
-	connChanMap := make(map[string]chan net.Conn)
+type listenerBasedBridgeProtocol struct {
+	mu          sync.Mutex
+	connChanMap map[string]chan net.Conn
+}
+
+func (p *listenerBasedBridgeProtocol) BridgeSession(Channel string, ClientConn net.Conn, ListenerSession Session) error {
+	remoteConn, err := ListenerSession.Dial()
+	if err != nil {
+		json.NewEncoder(ClientConn).Encode(BridgeResponse{Success: false, Payload: "Connection is reset"})
+		return fmt.Errorf("channel connection is reset")
+	}
+	defer remoteConn.Close()
+
+	if err := json.NewEncoder(ClientConn).Encode(BridgeResponse{Success: true}); err != nil {
+		return err
+	}
+
+	ctx, cancelFn := context.WithCancel(context.Background())
+	go func() { io.Copy(ClientConn, remoteConn); cancelFn() }()
+	go func() { io.Copy(remoteConn, ClientConn); cancelFn() }()
+	<-ctx.Done()
+	return nil
+}
+
+func (p *listenerBasedBridgeProtocol) InitSession(Channel string, ListenerConn net.Conn) (Session, error) {
+	p.mu.Lock()
+	connChan, exist := p.connChanMap[Channel]
+	if !exist {
+		p.connChanMap[Channel] = make(chan net.Conn)
+		connChan = p.connChanMap[Channel]
+	}
+	p.mu.Unlock()
+	return newReverseSession(ListenerConn, connChan)
+}
+
+func (p *listenerBasedBridgeProtocol) serveListener(lis net.Listener) {
 	go func() {
 		for {
 			bridgeConn, err := lis.Accept()
 			if err != nil {
-				for _, c := range connChanMap {
+				for _, c := range p.connChanMap {
 					close(c)
 				}
 				lis.Close()
@@ -98,25 +131,22 @@ func CreateBridgeListenerBasedFallback(lis net.Listener) func(string, net.Conn) 
 					bridgeConn.Close()
 					return
 				}
-				mu.Lock()
-				connChan, exist := connChanMap[req.Payload]
+				p.mu.Lock()
+				connChan, exist := p.connChanMap[req.Payload]
 				if !exist {
-					connChanMap[req.Payload] = make(chan net.Conn)
-					connChan = connChanMap[req.Payload]
+					p.connChanMap[req.Payload] = make(chan net.Conn)
+					connChan = p.connChanMap[req.Payload]
 				}
-				mu.Unlock()
+				p.mu.Unlock()
 				connChan <- bridgeConn
 			}(bridgeConn)
 		}
 	}()
-	return func(s string, c net.Conn) (Session, error) {
-		mu.Lock()
-		connChan, exist := connChanMap[s]
-		if !exist {
-			connChanMap[s] = make(chan net.Conn)
-			connChan = connChanMap[s]
-		}
-		mu.Unlock()
-		return newReverseSession(c, connChan)
-	}
+}
+
+// CreateBridgeListenerBasedFallback provides a bridge protocol for the bridge server.
+func CreateBridgeListenerBasedFallback(lis net.Listener) BridgeProtocol {
+	p := listenerBasedBridgeProtocol{connChanMap: make(map[string]chan net.Conn)}
+	go p.serveListener(lis)
+	return &p
 }
