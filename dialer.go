@@ -88,6 +88,83 @@ func (s *clientSession) SetID(v string) {
 	s.addr = v
 }
 
+type clientTCPSession struct {
+	conn    net.Conn
+	address string
+
+	id       string
+	mu       sync.Mutex
+	isClosed bool
+	close    chan struct{}
+}
+
+func (s *clientTCPSession) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.isClosed {
+		return nil
+	}
+	s.isClosed = true
+	close(s.close)
+	if s.conn != nil {
+		return s.conn.Close()
+	}
+	return nil
+}
+
+func (s *clientTCPSession) IsClosed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.isClosed
+}
+
+func (s *clientTCPSession) ID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.id
+}
+
+func (s *clientTCPSession) SetID(v string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.id = v
+}
+
+func (s *clientTCPSession) Dial() (net.Conn, error) {
+	conn, err := net.DialTimeout("tcp", s.address, 3*time.Second)
+	if err != nil {
+		s.Close()
+		return nil, err
+	}
+	if _, err := conn.Write([]byte{Dial}); err != nil {
+		s.Close()
+		conn.Close()
+		return nil, err
+	}
+	return conn, nil
+}
+
+func (s *clientTCPSession) Info() (*SessionInfo, error) {
+	conn, err := net.DialTimeout("tcp", s.address, 3*time.Second)
+	if err != nil {
+		s.Close()
+		return nil, err
+	}
+	defer conn.Close()
+	sessionInfo, err := getSessionInfo(conn)
+	if err != nil {
+		s.Close()
+		return nil, err
+	}
+	return sessionInfo, nil
+}
+
+func (s *clientTCPSession) Done() chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.close
+}
+
 func newClientTCPSession(address string) (Session, error) {
 	conn, err := net.DialTimeout("tcp", address, 3*time.Second)
 	if err != nil {
@@ -100,36 +177,10 @@ func newClientTCPSession(address string) (Session, error) {
 		}
 		return nil, fmt.Errorf("cannot finish handshake")
 	}
-	session := clientSession{dialer: func() (net.Conn, error) {
-		conn, err := net.DialTimeout("tcp", address, 3*time.Second)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := conn.Write([]byte{Dial}); err != nil {
-			conn.Close()
-			return nil, err
-		}
-		return conn, nil
-	}, infoFn: func() (*SessionInfo, error) {
-		conn, err := net.DialTimeout("tcp", address, 3*time.Second)
-		if err != nil {
-			return nil, err
-		}
-		defer conn.Close()
-		sessionInfo, err := getSessionInfo(conn)
-		if err != nil {
-			return nil, err
-		}
-		return sessionInfo, nil
-	}, isClosed: false, done: make(chan struct{}), addr: fmt.Sprintf("tcp://%s", address)}
+	session := clientTCPSession{conn: conn, address: address, id: fmt.Sprintf("tcp://%s", address), close: make(chan struct{}), isClosed: false}
 	go func() {
 		conn.Read(make([]byte, 1))
-		conn.Close()
 		session.Close()
-	}()
-	go func() {
-		<-session.Done()
-		conn.Close()
 	}()
 	return &session, nil
 }

@@ -10,45 +10,119 @@ import (
 	"sync"
 )
 
-func newClientListenerBasedSession(address, channel string, tlsConfig *tls.Config) (Session, error) {
-	return &clientSession{dialer: func() (net.Conn, error) {
-		conn, err := tls.Dial("tcp", address, tlsConfig)
-		if err != nil {
-			return nil, err
-		}
-		if err := json.NewEncoder(conn).Encode(&BridgeRequest{Type: Dial, Payload: channel}); err != nil {
-			conn.Close()
-			return nil, err
-		}
+type clientListenerSession struct {
+	conn      net.Conn
+	address   string
+	channel   string
+	tlsConfig *tls.Config
 
-		resp := BridgeResponse{}
-		if err := json.NewDecoder(conn).Decode(&resp); err != nil {
-			conn.Close()
-			return nil, err
-		}
-		if !resp.Success {
-			conn.Close()
-			return nil, fmt.Errorf(resp.Payload)
-		}
-		return conn, nil
-	}, infoFn: func() (*SessionInfo, error) {
-		conn, err := tls.Dial("tcp", address, tlsConfig)
-		if err != nil {
-			return nil, err
-		}
-		defer conn.Close()
-		if err := json.NewEncoder(conn).Encode(&BridgeRequest{Type: Info, Payload: channel}); err != nil {
-			return nil, err
-		}
-		resp := BridgeResponse{}
-		if err := json.NewDecoder(conn).Decode(&resp); err != nil {
-			return nil, err
-		}
-		if !resp.Success {
-			return nil, fmt.Errorf(resp.Payload)
-		}
-		return &resp.SessionInfo, nil
-	}, isClosed: false, done: make(chan struct{})}, nil
+	id       string
+	mu       sync.Mutex
+	isClosed bool
+	close    chan struct{}
+}
+
+func (s *clientListenerSession) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.isClosed {
+		return nil
+	}
+	s.isClosed = true
+	close(s.close)
+	if s.conn != nil {
+		return s.conn.Close()
+	}
+	return nil
+}
+
+func (s *clientListenerSession) IsClosed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.isClosed
+}
+
+func (s *clientListenerSession) ID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.id
+}
+
+func (s *clientListenerSession) SetID(v string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.id = v
+}
+
+func (s *clientListenerSession) Dial() (net.Conn, error) {
+	conn, err := tls.Dial("tcp", s.address, s.tlsConfig)
+	if err != nil {
+		s.Close()
+		return nil, err
+	}
+	if err := json.NewEncoder(conn).Encode(&BridgeRequest{Type: Dial, Payload: s.channel}); err != nil {
+		conn.Close()
+		s.Close()
+		return nil, err
+	}
+
+	resp := BridgeResponse{}
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		conn.Close()
+		s.Close()
+		return nil, err
+	}
+	if !resp.Success {
+		conn.Close()
+		return nil, fmt.Errorf(resp.Payload)
+	}
+	return conn, nil
+}
+
+func (s *clientListenerSession) Info() (*SessionInfo, error) {
+	conn, err := tls.Dial("tcp", s.address, s.tlsConfig)
+	if err != nil {
+		s.Close()
+		return nil, err
+	}
+	defer conn.Close()
+	if err := json.NewEncoder(conn).Encode(&BridgeRequest{Type: Info, Payload: s.channel}); err != nil {
+		s.Close()
+		return nil, err
+	}
+	resp := BridgeResponse{}
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		s.Close()
+		return nil, err
+	}
+	if !resp.Success {
+		return nil, fmt.Errorf(resp.Payload)
+	}
+	return &resp.SessionInfo, nil
+}
+
+func (s *clientListenerSession) Done() chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.close
+}
+
+func newClientListenerBasedSession(address, channel string, tlsConfig *tls.Config) (Session, error) {
+	probeConn, err := tls.Dial("tcp", address, tlsConfig)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.NewEncoder(probeConn).Encode(&BridgeRequest{Type: Nop, Payload: channel}); err != nil {
+		probeConn.Close()
+		return nil, err
+	}
+
+	session := clientListenerSession{conn: probeConn, address: address, channel: channel, tlsConfig: tlsConfig, close: make(chan struct{})}
+	go func() {
+		probeConn.Read(make([]byte, 1))
+		session.Close()
+	}()
+	return &session, nil
 }
 
 func newClientListenerAdapter(address, channel string, TLSConfig *tls.Config) (ListenerAdapter, error) {

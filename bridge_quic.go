@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 
 	"github.com/lucas-clemente/quic-go"
 )
@@ -80,21 +81,6 @@ func (p *quicBridgeProtocol) InitSession(Channel string, ListenerConn net.Conn) 
 			}
 			return &quicConn{Stream: stream, Connection: packetConn.Connection}, nil
 		},
-		infoFn: func() (*SessionInfo, error) {
-			addrStream, err := packetConn.Connection.OpenStream()
-			if err != nil {
-				return nil, err
-			}
-			defer func() {
-				addrStream.CancelRead(0)
-				addrStream.Close()
-			}()
-			sessionInfo, err := getSessionInfo(addrStream)
-			if err != nil {
-				return nil, err
-			}
-			return sessionInfo, nil
-		},
 	}
 	go func() {
 		select {
@@ -165,6 +151,90 @@ func newQuicListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, QuicCon
 	return WithListener(&quicConnListener{conn}, []string{fmt.Sprintf("quicf://%s", Addr)}), nil
 }
 
+type clientQuicSession struct {
+	conn quic.Connection
+
+	id       string
+	mu       sync.Mutex
+	isClosed bool
+	close    chan struct{}
+}
+
+func (s *clientQuicSession) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.isClosed {
+		return nil
+	}
+	s.conn.CloseWithError(0, "")
+	s.isClosed = true
+	close(s.close)
+	return nil
+}
+
+func (s *clientQuicSession) IsClosed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.isClosed {
+		return true
+	}
+	if s.conn.Context().Err() != nil {
+		s.isClosed = true
+	}
+	return s.isClosed
+}
+
+func (s *clientQuicSession) Done() chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.close
+}
+
+func (s *clientQuicSession) Dial() (net.Conn, error) {
+	stream, err := s.conn.OpenStream()
+	if err != nil {
+		s.Close()
+		return nil, err
+	}
+	if _, err := stream.Write([]byte{Dial}); err != nil {
+		stream.CancelRead(1)
+		stream.Close()
+		s.Close()
+		return nil, err
+	}
+	return &quicConn{Stream: stream, Connection: s.conn}, nil
+}
+
+func (s *clientQuicSession) Info() (*SessionInfo, error) {
+	stream, err := s.conn.OpenStream()
+	if err != nil {
+		s.Close()
+		return nil, err
+	}
+	defer func() {
+		stream.CancelRead(1)
+		stream.Close()
+	}()
+	sessionInfo, err := getSessionInfo(stream)
+	if err != nil {
+		s.Close()
+		return nil, err
+	}
+	return sessionInfo, nil
+}
+
+func (s *clientQuicSession) ID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.id
+}
+
+func (s *clientQuicSession) SetID(v string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.id = v
+}
+
 func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config) (Session, error) {
 	conn, err := quic.DialAddr(address, tlsConfig, &quic.Config{KeepAlive: true})
 	if err != nil {
@@ -191,36 +261,11 @@ func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config) (
 		return nil, fmt.Errorf(resp.Payload)
 	}
 
-	session := &clientSession{dialer: func() (net.Conn, error) {
-		stream, err := conn.OpenStream()
-		if err != nil {
-			return nil, err
-		}
-		if _, err := stream.Write([]byte{Dial}); err != nil {
-			stream.CancelRead(1)
-			stream.Close()
-			return nil, err
-		}
-		return &quicConn{Stream: stream, Connection: conn}, nil
-	}, infoFn: func() (*SessionInfo, error) {
-		stream, err := conn.OpenStream()
-		if err != nil {
-			return nil, err
-		}
-		defer func() {
-			stream.CancelRead(1)
-			stream.Close()
-		}()
-		sessionInfo, err := getSessionInfo(stream)
-		if err != nil {
-			return nil, err
-		}
-		return sessionInfo, nil
-	}, isClosed: false, done: make(chan struct{})}
-
+	session := &clientQuicSession{conn: conn, close: make(chan struct{}), isClosed: false}
 	go func() {
-		stream.Read(make([]byte, 1))
+		<-conn.Context().Done()
 		session.Close()
 	}()
+
 	return session, nil
 }
