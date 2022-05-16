@@ -127,6 +127,10 @@ func newClientTCPSession(address string) (Session, error) {
 		conn.Close()
 		session.Close()
 	}()
+	go func() {
+		<-session.Done()
+		conn.Close()
+	}()
 	return &session, nil
 }
 
@@ -215,8 +219,8 @@ func (d *Dialer) tryUpdateSession(Channel string) (Session, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	originalSession := d.channelSessions[Channel]
-	if originalSession == nil || originalSession.ID() != session.ID() {
+	originalSession, exist := d.channelSessions[Channel]
+	if !exist || originalSession.ID() != session.ID() {
 		if originalSession != nil {
 			originalSession.Close()
 		}
