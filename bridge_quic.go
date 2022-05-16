@@ -166,7 +166,7 @@ func newQuicListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, QuicCon
 }
 
 func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config) (Session, error) {
-	conn, err := quic.DialAddr(address, tlsConfig, nil)
+	conn, err := quic.DialAddr(address, tlsConfig, &quic.Config{KeepAlive: true})
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +191,7 @@ func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config) (
 		return nil, fmt.Errorf(resp.Payload)
 	}
 
-	return &clientSession{dialer: func() (net.Conn, error) {
+	session := &clientSession{dialer: func() (net.Conn, error) {
 		stream, err := conn.OpenStream()
 		if err != nil {
 			return nil, err
@@ -216,5 +216,11 @@ func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config) (
 			return nil, err
 		}
 		return sessionInfo, nil
-	}, isClosed: false, done: make(chan struct{})}, nil
+	}, isClosed: false, done: make(chan struct{})}
+
+	go func() {
+		stream.Read(make([]byte, 1))
+		session.Close()
+	}()
+	return session, nil
 }
