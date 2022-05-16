@@ -195,7 +195,7 @@ func (d *Dialer) establishChannel(Channel string) (Session, error) {
 	curSession := d.channelSessions[Channel]
 	d.mu.RUnlock()
 	for _, address := range addresses {
-		if curSession != nil && curSession.ID() == address {
+		if curSession != nil && !curSession.IsClosed() && curSession.ID() == address {
 			return curSession, nil
 		}
 		session, err := d.createConnection(address, Channel)
