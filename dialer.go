@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/lucas-clemente/quic-go"
 )
 
 type clientSession struct {
@@ -191,6 +193,7 @@ type Dialer struct {
 	updateChannelAddress  bool
 	updateChannelInterval time.Duration
 	tlsConfig             *tls.Config
+	quicConfig            *quic.Config
 
 	mu               sync.RWMutex
 	isClosed         bool
@@ -237,7 +240,7 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 			TLSConfig = *d.tlsConfig
 		}
 		TLSConfig.NextProtos = append(TLSConfig.NextProtos, "quicf")
-		return newClientQuicBasedSession(uri.Host, channel, &TLSConfig)
+		return newClientQuicBasedSession(uri.Host, channel, &TLSConfig, d.quicConfig)
 	}
 	return nil, fmt.Errorf("unknown protocol: %s", address)
 }

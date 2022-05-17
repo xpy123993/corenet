@@ -3,6 +3,8 @@ package corenet
 import (
 	"crypto/tls"
 	"time"
+
+	"github.com/lucas-clemente/quic-go"
 )
 
 type dialerOptionApplier struct {
@@ -49,6 +51,15 @@ func WithDialerUpdateChannelInterval(duration time.Duration) DialerOption {
 	return &dialerOptionApplier{
 		applyFn: func(d *Dialer) {
 			d.updateChannelInterval = duration
+		},
+	}
+}
+
+// WithDialerQuicConfig specifies the quic config being used for quicf protocol.
+func WithDialerQuicConfig(config *quic.Config) DialerOption {
+	return &dialerOptionApplier{
+		applyFn: func(d *Dialer) {
+			d.quicConfig = config
 		},
 	}
 }

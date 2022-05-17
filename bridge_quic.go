@@ -235,8 +235,8 @@ func (s *clientQuicSession) SetID(v string) {
 	s.id = v
 }
 
-func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config) (Session, error) {
-	conn, err := quic.DialAddr(address, tlsConfig, &quic.Config{KeepAlive: true})
+func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config, quicConfig *quic.Config) (Session, error) {
+	conn, err := quic.DialAddr(address, tlsConfig, nil)
 	if err != nil {
 		return nil, err
 	}
