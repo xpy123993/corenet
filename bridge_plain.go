@@ -140,11 +140,11 @@ func newClientListenerAdapter(address, channel string, TLSConfig *tls.Config) (L
 		return nil, err
 	}
 	return WithListenerReverseConn(controlConn, func() (net.Conn, error) {
-		conn, err := tls.Dial("tcp", resp.Payload, TLSConfig)
+		conn, err := tls.Dial("tcp", address, TLSConfig)
 		if err != nil {
 			return nil, err
 		}
-		if err := json.NewEncoder(conn).Encode(BridgeRequest{Type: Bind, Payload: channel}); err != nil {
+		if err := json.NewEncoder(conn).Encode(BridgeRequest{Type: Serve, Payload: channel}); err != nil {
 			conn.Close()
 			return nil, err
 		}
@@ -153,6 +153,7 @@ func newClientListenerAdapter(address, channel string, TLSConfig *tls.Config) (L
 }
 
 type listenerBasedBridgeProtocol struct {
+	serveChan   chan serveContext
 	mu          sync.Mutex
 	connChanMap map[string]chan net.Conn
 }
@@ -206,39 +207,36 @@ func (p *listenerBasedBridgeProtocol) InitSession(Channel string, ListenerConn n
 	return &session, nil
 }
 
-func (p *listenerBasedBridgeProtocol) serveListener(lis net.Listener) {
+func (p *listenerBasedBridgeProtocol) serveListener() {
 	go func() {
 		for {
-			bridgeConn, err := lis.Accept()
-			if err != nil {
+			serve, ok := <-p.serveChan
+			if !ok {
 				for _, c := range p.connChanMap {
 					close(c)
 				}
-				lis.Close()
+				close(p.serveChan)
 				return
 			}
-			go func(bridgeConn net.Conn) {
-				req := BridgeRequest{}
-				if err := json.NewDecoder(bridgeConn).Decode(&req); err != nil {
-					bridgeConn.Close()
-					return
-				}
+			go func(ctx *serveContext) {
 				p.mu.Lock()
-				connChan, exist := p.connChanMap[req.Payload]
+				connChan, exist := p.connChanMap[ctx.channel]
 				if !exist {
-					p.connChanMap[req.Payload] = make(chan net.Conn)
-					connChan = p.connChanMap[req.Payload]
+					p.connChanMap[ctx.channel] = make(chan net.Conn)
+					connChan = p.connChanMap[ctx.channel]
 				}
 				p.mu.Unlock()
-				connChan <- bridgeConn
-			}(bridgeConn)
+				connChan <- ctx.conn
+			}(&serve)
 		}
 	}()
 }
 
+func (p *listenerBasedBridgeProtocol) ServeChannel() chan serveContext { return p.serveChan }
+
 // CreateBridgeListenerBasedFallback provides a bridge protocol for the bridge server.
-func CreateBridgeListenerBasedFallback(lis net.Listener) BridgeProtocol {
-	p := listenerBasedBridgeProtocol{connChanMap: make(map[string]chan net.Conn)}
-	go p.serveListener(lis)
+func CreateBridgeListenerBasedFallback() BridgeProtocol {
+	p := listenerBasedBridgeProtocol{connChanMap: make(map[string]chan net.Conn), serveChan: make(chan serveContext)}
+	go p.serveListener()
 	return &p
 }

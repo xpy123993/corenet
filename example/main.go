@@ -21,9 +21,8 @@ import (
 )
 
 var (
-	mode                  = flag.String("mode", "", "The mode of the binary, can be bridge, server or client.")
-	bridgeServerURL       = flag.String("bridge-url", "", "The URL of bridge server.")
-	bridgeServerPlainAddr = flag.String("bridge-plain-addr", "", "In bridge mode, the second listening address.")
+	mode            = flag.String("mode", "", "The mode of the binary, can be bridge, server or client.")
+	bridgeServerURL = flag.String("bridge-url", "", "The URL of bridge server.")
 
 	channel = flag.String("channel", "test-channel", "")
 	message = flag.String("message", "hello world", "In client mode, the message sent to the server.")
@@ -82,22 +81,18 @@ func serveBridge() error {
 	cert := generateCertificate()
 	switch serverURL.Scheme {
 	case "ttf":
-		plainLis, err := tls.Listen("tcp", *bridgeServerPlainAddr, &tls.Config{Certificates: []tls.Certificate{cert}})
-		if err != nil {
-			log.Fatal(err)
-		}
 		mainLis, err := tls.Listen("tcp", serverURL.Host, &tls.Config{Certificates: []tls.Certificate{cert}})
 		if err != nil {
 			log.Fatal(err)
 		}
-		server := corenet.NewBridgeServer(corenet.CreateBridgeListenerBasedFallback(plainLis), plainLis.Addr().String(), corenet.WithBridgeServerForceEvictChannelSession(true))
+		server := corenet.NewBridgeServer(corenet.CreateBridgeListenerBasedFallback(), corenet.WithBridgeServerForceEvictChannelSession(true))
 		return server.Serve(mainLis)
 	case "quicf":
 		lis, err := corenet.CreateBridgeQuicListener(serverURL.Host, &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
 		if err != nil {
 			return err
 		}
-		server := corenet.NewBridgeServer(corenet.CreateBridgeQuicBasedFallback(), "", corenet.WithBridgeServerForceEvictChannelSession(true))
+		server := corenet.NewBridgeServer(corenet.CreateBridgeQuicBasedFallback(), corenet.WithBridgeServerForceEvictChannelSession(true))
 		return server.Serve(lis)
 	default:
 		return fmt.Errorf("unknown protocol: %s", serverURL.Scheme)

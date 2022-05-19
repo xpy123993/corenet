@@ -66,6 +66,8 @@ func CreateBridgeQuicBasedFallback() BridgeProtocol {
 type quicBridgeProtocol struct {
 }
 
+func (p *quicBridgeProtocol) ServeChannel() chan serveContext { return nil }
+
 func (p *quicBridgeProtocol) InitSession(Channel string, ListenerConn net.Conn) (Session, error) {
 	packetConn, ok := ListenerConn.(*quicConn)
 	if !ok {

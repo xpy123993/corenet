@@ -23,9 +23,8 @@ func blockUntilDialSucceed(t *testing.T, invoke func() (net.Conn, error), deadli
 
 func TestBridgeProto(t *testing.T) {
 	bridgeConnListener := corenet.NewInMemoryListener()
-	bridgeListener := corenet.NewInMemoryListener()
 
-	bridgeServer := corenet.NewBridgeServer(corenet.CreateBridgeListenerBasedFallback(bridgeListener), "")
+	bridgeServer := corenet.NewBridgeServer(corenet.CreateBridgeListenerBasedFallback())
 	go bridgeServer.Serve(bridgeConnListener)
 	reverseListenerConn, err := bridgeConnListener.Dial()
 	if err != nil {
@@ -40,11 +39,11 @@ func TestBridgeProto(t *testing.T) {
 	}
 
 	clientListener := corenet.NewMultiListener(corenet.WithListenerReverseConn(reverseListenerConn, func() (net.Conn, error) {
-		conn, err := bridgeListener.Dial()
+		conn, err := bridgeConnListener.Dial()
 		if err != nil {
 			return nil, err
 		}
-		if err := json.NewEncoder(conn).Encode(corenet.BridgeRequest{Type: corenet.Bind, Payload: "test-channel"}); err != nil {
+		if err := json.NewEncoder(conn).Encode(corenet.BridgeRequest{Type: corenet.Serve, Payload: "test-channel"}); err != nil {
 			conn.Close()
 			return nil, err
 		}

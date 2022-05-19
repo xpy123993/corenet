@@ -14,6 +14,9 @@ type BridgeProtocol interface {
 	InitSession(Channel string, ListenerConn net.Conn) (Session, error)
 	// BridgeSession serves builds connections between a client connection and a listener session.
 	BridgeSession(Channel string, ClientConn net.Conn, ListenerSession Session) error
+	// ServeChannel is the channel where the bridge server will redirect serve requests.
+	// Optional, can return nil.
+	ServeChannel() chan serveContext
 }
 
 // BridgeServer redirects traffic between client and listener.
@@ -22,7 +25,6 @@ type BridgeServer struct {
 	routeTable map[string]Session
 
 	sessionProtocol BridgeProtocol
-	sessionAddress  string
 
 	logError                 bool
 	forceEvictChannelSession bool
@@ -59,12 +61,16 @@ func WithBridgeServerForceEvictChannelSession(v bool) BridgeServerOption {
 	}
 }
 
-// NewBridgeServer returns a bridge server. `SessionAddress` will be sent to the channel listener.
-func NewBridgeServer(SessionProtocol BridgeProtocol, SessionAddress string, Options ...BridgeServerOption) *BridgeServer {
+type serveContext struct {
+	conn    net.Conn
+	channel string
+}
+
+// NewBridgeServer returns a bridge server.
+func NewBridgeServer(SessionProtocol BridgeProtocol, Options ...BridgeServerOption) *BridgeServer {
 	bs := &BridgeServer{
 		routeTable:      make(map[string]Session),
 		sessionProtocol: SessionProtocol,
-		sessionAddress:  SessionAddress,
 
 		logError:                 false,
 		forceEvictChannelSession: false,
@@ -99,7 +105,7 @@ func (s *BridgeServer) registerChannel(channel string, session Session) error {
 }
 
 func (s *BridgeServer) serveBind(conn net.Conn, channel string) error {
-	if err := json.NewEncoder(conn).Encode(BridgeResponse{Success: true, Payload: s.sessionAddress}); err != nil {
+	if err := json.NewEncoder(conn).Encode(BridgeResponse{Success: true}); err != nil {
 		return err
 	}
 
@@ -153,7 +159,12 @@ func (s *BridgeServer) serveInfo(conn net.Conn, channel string) error {
 }
 
 func (s *BridgeServer) serveConnection(conn net.Conn) {
-	defer conn.Close()
+	closeConnectionAfterExit := true
+	defer func() {
+		if closeConnectionAfterExit {
+			conn.Close()
+		}
+	}()
 	req := BridgeRequest{}
 	if err := json.NewDecoder(conn).Decode(&req); err != nil {
 		return
@@ -166,6 +177,11 @@ func (s *BridgeServer) serveConnection(conn net.Conn) {
 		result = s.serveDial(conn, &req)
 	case Info:
 		result = s.serveInfo(conn, req.Payload)
+	case Serve:
+		if s.sessionProtocol.ServeChannel() != nil {
+			s.sessionProtocol.ServeChannel() <- serveContext{conn: conn, channel: req.Payload}
+			closeConnectionAfterExit = false
+		}
 	case Nop:
 		conn.Read(make([]byte, 1))
 	}
