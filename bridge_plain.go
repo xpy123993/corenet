@@ -149,7 +149,7 @@ func newClientListenerAdapter(address, channel string, TLSConfig *tls.Config) (L
 			return nil, err
 		}
 		return conn, nil
-	}, []string{fmt.Sprintf("ttf://%s", address)}), nil
+	}, []string{fmt.Sprintf("ttf://%s?channel=%s", address, channel)}), nil
 }
 
 type listenerBasedBridgeProtocol struct {

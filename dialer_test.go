@@ -159,7 +159,7 @@ func TestDialerListenerBasedBridge(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if sessionID != bridgeServerAddr {
+	if !strings.Contains(sessionID, bridgeServerAddr) {
 		t.Errorf("expect %s, got %v", bridgeServerAddr, sessionID)
 	}
 }
@@ -211,7 +211,7 @@ func TestDialerQuicBasedBridge(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if sessionID != bridgeServerAddr {
+	if !strings.Contains(sessionID, bridgeServerAddr) {
 		t.Errorf("expect %s, got %v", bridgeServerAddr, sessionID)
 	}
 	wg.Wait()

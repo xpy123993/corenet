@@ -150,7 +150,7 @@ func newQuicListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, QuicCon
 		conn.CloseWithError(1, err.Error())
 		return nil, err
 	}
-	return WithListener(&quicConnListener{conn}, []string{fmt.Sprintf("quicf://%s", Addr)}), nil
+	return WithListener(&quicConnListener{conn}, []string{fmt.Sprintf("quicf://%s?channel=%s", Addr, Channel)}), nil
 }
 
 type clientQuicSession struct {
