@@ -3,6 +3,7 @@ package corenet
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"sync"
 )
 
@@ -84,8 +85,13 @@ var (
 func init() {
 	http.HandleFunc("/debug/clover3", func(w http.ResponseWriter, r *http.Request) {
 		statsSnapshot := globalStatsCounterMap.Stats()
-		for entryName, value := range statsSnapshot {
-			fmt.Fprintf(w, "%s = %d\n", entryName, value)
+		entries := make([]string, 0, len(statsSnapshot))
+		for entryName := range statsSnapshot {
+			entries = append(entries, entryName)
+		}
+		sort.Strings(entries)
+		for _, entry := range entries {
+			fmt.Fprintf(w, "%s = %d", entry, statsSnapshot[entry])
 		}
 	})
 }
