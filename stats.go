@@ -91,7 +91,7 @@ func init() {
 		}
 		sort.Strings(entries)
 		for _, entry := range entries {
-			fmt.Fprintf(w, "%s = %d", entry, statsSnapshot[entry])
+			fmt.Fprintf(w, "%s = %d\n", entry, statsSnapshot[entry])
 		}
 	})
 }
