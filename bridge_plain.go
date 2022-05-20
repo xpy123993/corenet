@@ -76,7 +76,7 @@ func (s *clientListenerSession) Dial() (net.Conn, error) {
 		conn.Close()
 		return nil, fmt.Errorf(resp.Payload)
 	}
-	return conn, nil
+	return createTrackConn(conn, "client_plain_active_connections"), nil
 }
 
 func (s *clientListenerSession) Info() (*SessionInfo, error) {

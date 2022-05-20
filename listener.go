@@ -168,7 +168,7 @@ func (l *multiListener) Accept() (net.Conn, error) {
 	case <-l.done:
 	case conn, ok := <-l.connChan:
 		if ok {
-			return conn, nil
+			return createTrackConn(conn, "listener_active_connections"), nil
 		}
 	}
 	return nil, io.EOF

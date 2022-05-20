@@ -207,7 +207,7 @@ func (s *clientQuicSession) Dial() (net.Conn, error) {
 		s.Close()
 		return nil, err
 	}
-	return &quicConn{Stream: stream, Connection: s.conn}, nil
+	return createTrackConn(&quicConn{Stream: stream, Connection: s.conn}, "client_quic_active_connections"), nil
 }
 
 func (s *clientQuicSession) Info() (*SessionInfo, error) {

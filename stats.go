@@ -2,6 +2,7 @@ package corenet
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"sort"
 	"sync"
@@ -76,6 +77,34 @@ func (m *statsCounterMap) Stats() map[string]int64 {
 		res[entryID] = counter.Val()
 	}
 	return res
+}
+
+type trackConn struct {
+	net.Conn
+
+	mu       sync.Mutex
+	isClosed bool
+	label    string
+}
+
+func createTrackConn(conn net.Conn, label string) net.Conn {
+	globalStatsCounterMap.Inc(label)
+	return &trackConn{
+		isClosed: false,
+		label:    label,
+		Conn:     conn,
+	}
+}
+
+func (c *trackConn) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.isClosed {
+		return nil
+	}
+	c.isClosed = true
+	defer globalStatsCounterMap.Dec(c.label)
+	return c.Conn.Close()
 }
 
 var (

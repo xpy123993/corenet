@@ -308,8 +308,8 @@ func (d *Dialer) spawnBackgroundRoutine() {
 	}()
 }
 
-// DialIgnoreSessionCache dials to `channel` ignoring the session cache.
-func (d *Dialer) DialIgnoreSessionCache(Channel string) (net.Conn, error) {
+// dialWithoutSessionCache dials to `channel` ignoring the session cache.
+func (d *Dialer) dialWithoutSessionCache(Channel string) (net.Conn, error) {
 	session, err := d.establishChannel(Channel)
 	if err != nil {
 		return nil, err
@@ -330,7 +330,7 @@ func (d *Dialer) DialIgnoreSessionCache(Channel string) (net.Conn, error) {
 			}
 			d.mu.Unlock()
 			if mayUpdate {
-				return d.DialIgnoreSessionCache(Channel)
+				return d.dialWithoutSessionCache(Channel)
 			}
 		}
 	}
@@ -345,7 +345,7 @@ func (d *Dialer) Dial(Channel string) (net.Conn, error) {
 	if exist && !session.IsClosed() {
 		return session.Dial()
 	}
-	return d.DialIgnoreSessionCache(Channel)
+	return d.dialWithoutSessionCache(Channel)
 }
 
 // GetSessionID returns the session information of the channel.
