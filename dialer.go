@@ -143,7 +143,7 @@ func (s *clientTCPSession) Dial() (net.Conn, error) {
 		conn.Close()
 		return nil, err
 	}
-	return conn, nil
+	return createTrackConn(conn, "client_direct_tcp_active_connections"), nil
 }
 
 func (s *clientTCPSession) Info() (*SessionInfo, error) {
