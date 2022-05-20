@@ -119,6 +119,9 @@ func (s *BridgeServer) serveBind(conn net.Conn, channel string) error {
 		return err
 	}
 
+	globalStatsCounterMap.Inc("bridge_active_channel")
+	defer globalStatsCounterMap.Dec("bridge_active_channel")
+
 	<-session.Done()
 
 	s.mu.Lock()
@@ -130,6 +133,9 @@ func (s *BridgeServer) serveBind(conn net.Conn, channel string) error {
 }
 
 func (s *BridgeServer) serveDial(conn net.Conn, req *BridgeRequest) error {
+	globalStatsCounterMap.Inc("bridge_active_dialer")
+	defer globalStatsCounterMap.Dec("bridge_active_dialer")
+
 	channelSession := s.lookupChannel(req.Payload)
 	if channelSession == nil {
 		json.NewEncoder(conn).Encode(BridgeResponse{Success: false, Payload: fmt.Sprintf("channel `%s` not exists", req.Payload)})
@@ -159,6 +165,9 @@ func (s *BridgeServer) serveInfo(conn net.Conn, channel string) error {
 }
 
 func (s *BridgeServer) serveConnection(conn net.Conn) {
+	globalStatsCounterMap.Inc("bridge_active_connection")
+	defer globalStatsCounterMap.Dec("bridge_active_connection")
+
 	closeConnectionAfterExit := true
 	defer func() {
 		if closeConnectionAfterExit {

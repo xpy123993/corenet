@@ -145,6 +145,5 @@ func main() {
 			return
 		}
 		log.Printf("result: %s", buf[:n])
-
 	}
 }

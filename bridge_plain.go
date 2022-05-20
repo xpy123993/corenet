@@ -165,6 +165,9 @@ func (p *listenerBasedBridgeProtocol) BridgeSession(Channel string, ClientConn n
 	}
 	defer remoteConn.Close()
 
+	globalStatsCounterMap.Inc("bridge_active_plain_connection")
+	defer globalStatsCounterMap.Dec("bridge_active_plain_connection")
+
 	ctx, cancelFn := context.WithCancel(context.Background())
 	go func() { io.Copy(ClientConn, remoteConn); cancelFn() }()
 	go func() { io.Copy(remoteConn, ClientConn); cancelFn() }()

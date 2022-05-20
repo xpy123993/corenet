@@ -87,6 +87,9 @@ func (l *multiListener) IsClosed() bool {
 }
 
 func (l *multiListener) serveReverseListenerConn(conn net.Conn, dialer func() (net.Conn, error)) {
+	globalStatsCounterMap.Inc("listener_active_reverse_listener")
+	defer globalStatsCounterMap.Dec("listener_active_reverse_listener")
+
 	p := make([]byte, 1)
 	for !l.IsClosed() {
 		if n, err := conn.Read(p); err != nil || n != 1 {
@@ -147,6 +150,9 @@ func (l *multiListener) serveIncomingConn(conn net.Conn) {
 }
 
 func (l *multiListener) serveListener(raw net.Listener) {
+	globalStatsCounterMap.Inc("listener_active_listener")
+	defer globalStatsCounterMap.Dec("listener_active_listener")
+
 	defer l.Close()
 	for {
 		conn, err := raw.Accept()
