@@ -118,7 +118,7 @@ func (p *quicBridgeProtocol) BridgeSession(Channel string, ClientConn net.Conn, 
 			globalStatsCounterMap.Inc("bridge_active_quic_connection")
 			defer globalStatsCounterMap.Dec("bridge_active_quic_connection")
 
-			ctx, cancelFn := context.WithCancel(context.Background())
+			ctx, cancelFn := context.WithCancel(clientConn.Context())
 			go func() { io.Copy(clientConn, listenerConn); cancelFn() }()
 			go func() { io.Copy(listenerConn, clientConn); cancelFn() }()
 			<-ctx.Done()
