@@ -229,6 +229,9 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 	if err != nil {
 		return nil, err
 	}
+	if len(uri.Port()) == 0 {
+		uri.Host = uri.Host + ":13300"
+	}
 	switch uri.Scheme {
 	case "tcp":
 		return newClientTCPSession(uri.Host)

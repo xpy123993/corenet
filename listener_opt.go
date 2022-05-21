@@ -74,6 +74,9 @@ func CreateListenerFallbackURLAdapter(BridgeServerURL string, Channel string, TL
 	if err != nil {
 		return nil, err
 	}
+	if len(uri.Port()) == 0 {
+		uri.Host = uri.Host + ":13300"
+	}
 	switch uri.Scheme {
 	case "ttf":
 		// tcp+tls+fallback
