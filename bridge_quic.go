@@ -153,6 +153,10 @@ func newQuicListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, QuicCon
 		conn.CloseWithError(1, err.Error())
 		return nil, err
 	}
+	if !resp.Success {
+		conn.CloseWithError(0, "")
+		return nil, fmt.Errorf("remote error: %v", resp.Payload)
+	}
 	return WithListener(&quicConnListener{conn}, []string{fmt.Sprintf("quicf://%s?channel=%s", Addr, Channel)}), nil
 }
 

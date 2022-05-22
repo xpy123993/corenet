@@ -139,6 +139,10 @@ func newClientListenerAdapter(address, channel string, TLSConfig *tls.Config) (L
 		controlConn.Close()
 		return nil, err
 	}
+	if !resp.Success {
+		controlConn.Close()
+		return nil, fmt.Errorf("remote error: %v", resp.Payload)
+	}
 	return WithListenerReverseConn(controlConn, func() (net.Conn, error) {
 		conn, err := tls.Dial("tcp", address, TLSConfig)
 		if err != nil {

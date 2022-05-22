@@ -128,6 +128,7 @@ func TestDialerListenerBasedBridge(t *testing.T) {
 	})
 	if err != nil {
 		t.Error(err)
+		return
 	}
 	clientListener := corenet.NewMultiListener(clientListenerAdapter)
 	defer clientListener.Close()
