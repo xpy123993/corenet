@@ -110,7 +110,7 @@ func TestRawDialer(t *testing.T) {
 	}
 }
 
-func TestDialerListenerBasedBridge(t *testing.T) {
+func TestDialerUsePlainRelayProtocol(t *testing.T) {
 	cert := generateCertificate(t)
 	mainListener, err := tls.Listen("tcp", ":0", &tls.Config{
 		Certificates: []tls.Certificate{cert},
@@ -118,12 +118,12 @@ func TestDialerListenerBasedBridge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bridge := corenet.NewBridgeServer()
-	go bridge.Serve(mainListener, corenet.CreateBridgeListenerBasedFallback())
+	relayServer := corenet.NewRelayServer()
+	go relayServer.Serve(mainListener, corenet.UsePlainRelayProtocol())
 	time.Sleep(3 * time.Millisecond)
-	bridgeServerAddr := fmt.Sprintf("ttf://%s", mainListener.Addr().String())
+	relayServerAddr := fmt.Sprintf("ttf://%s", mainListener.Addr().String())
 
-	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(bridgeServerAddr, "test-channel", &tls.Config{
+	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(relayServerAddr, "test-channel", &tls.Config{
 		InsecureSkipVerify: true,
 	})
 	if err != nil {
@@ -146,7 +146,7 @@ func TestDialerListenerBasedBridge(t *testing.T) {
 	}()
 	time.Sleep(3 * time.Millisecond)
 
-	dialer := corenet.NewDialer([]string{bridgeServerAddr}, corenet.WithDialerBridgeTLSConfig(&tls.Config{
+	dialer := corenet.NewDialer([]string{relayServerAddr}, corenet.WithDialerRelayTLSConfig(&tls.Config{
 		InsecureSkipVerify: true,
 	}))
 	conn, err := dialer.Dial("test-channel")
@@ -160,24 +160,24 @@ func TestDialerListenerBasedBridge(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if !strings.Contains(sessionID, bridgeServerAddr) {
-		t.Errorf("expect %s, got %v", bridgeServerAddr, sessionID)
+	if !strings.Contains(sessionID, relayServerAddr) {
+		t.Errorf("expect %s, got %v", relayServerAddr, sessionID)
 	}
 }
 
-func TestDialerQuicBasedBridge(t *testing.T) {
+func TestDialerQuicBasedRelayProtocol(t *testing.T) {
 	cert := generateCertificate(t)
 
-	bridgeListener, err := corenet.CreateBridgeQuicListener(":0", &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
+	relayListener, err := corenet.CreateRelayQuicListener(":0", &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	bridge := corenet.NewBridgeServer()
-	go bridge.Serve(bridgeListener, corenet.CreateBridgeQuicBasedFallback())
+	relayServer := corenet.NewRelayServer()
+	go relayServer.Serve(relayListener, corenet.UseQuicRelayProtocol())
 	time.Sleep(3 * time.Millisecond)
-	bridgeServerAddr := fmt.Sprintf("quicf://%s", bridgeListener.Addr().String())
+	relayServerAddr := fmt.Sprintf("quicf://%s", relayListener.Addr().String())
 
-	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(bridgeServerAddr, "test-channel", &tls.Config{
+	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(relayServerAddr, "test-channel", &tls.Config{
 		InsecureSkipVerify: true, NextProtos: []string{"quicf"},
 	})
 	if err != nil {
@@ -197,7 +197,7 @@ func TestDialerQuicBasedBridge(t *testing.T) {
 		conn.Close()
 	}()
 	time.Sleep(3 * time.Millisecond)
-	dialer := corenet.NewDialer([]string{bridgeServerAddr}, corenet.WithDialerBridgeTLSConfig(&tls.Config{
+	dialer := corenet.NewDialer([]string{relayServerAddr}, corenet.WithDialerRelayTLSConfig(&tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"quicf"},
 	}))
@@ -212,8 +212,8 @@ func TestDialerQuicBasedBridge(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if !strings.Contains(sessionID, bridgeServerAddr) {
-		t.Errorf("expect %s, got %v", bridgeServerAddr, sessionID)
+	if !strings.Contains(sessionID, relayServerAddr) {
+		t.Errorf("expect %s, got %v", relayServerAddr, sessionID)
 	}
 	wg.Wait()
 }
@@ -221,16 +221,16 @@ func TestDialerQuicBasedBridge(t *testing.T) {
 func TestDialerUpgradeSession(t *testing.T) {
 	cert := generateCertificate(t)
 
-	bridgeListener, err := corenet.CreateBridgeQuicListener(":0", &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
+	relayListener, err := corenet.CreateRelayQuicListener(":0", &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	bridge := corenet.NewBridgeServer()
-	go bridge.Serve(bridgeListener, corenet.CreateBridgeQuicBasedFallback())
+	relayServer := corenet.NewRelayServer()
+	go relayServer.Serve(relayListener, corenet.UseQuicRelayProtocol())
 	time.Sleep(3 * time.Millisecond)
-	bridgeServerAddr := fmt.Sprintf("quicf://%s", bridgeListener.Addr().String())
+	relayServerAddr := fmt.Sprintf("quicf://%s", relayListener.Addr().String())
 
-	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(bridgeServerAddr, "test-channel", &tls.Config{
+	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(relayServerAddr, "test-channel", &tls.Config{
 		InsecureSkipVerify: true, NextProtos: []string{"quicf"},
 	})
 	if err != nil {
@@ -254,7 +254,7 @@ func TestDialerUpgradeSession(t *testing.T) {
 		conn.Close()
 	}()
 	time.Sleep(3 * time.Millisecond)
-	dialer := corenet.NewDialer([]string{bridgeServerAddr}, corenet.WithDialerBridgeTLSConfig(&tls.Config{
+	dialer := corenet.NewDialer([]string{relayServerAddr}, corenet.WithDialerRelayTLSConfig(&tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"quicf"},
 	}), corenet.WithDialerUpdateChannelInterval(time.Millisecond))

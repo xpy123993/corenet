@@ -37,16 +37,16 @@ type SessionInfo struct {
 	Addresses []string `json:"addresses"`
 }
 
-// BridgeRequest specifies a request to a bridge server.
-type BridgeRequest struct {
+// RelayRequest specifies a request to a relay server.
+type RelayRequest struct {
 	Type    int    `json:"type"`
 	Payload string `json:"payload"`
 
 	DialGetSessionInfo bool `json:"get-sesion-info"`
 }
 
-// BridgeResponse specifies a response from a bridge server.
-type BridgeResponse struct {
+// RelayResponse specifies a response from a relay server.
+type RelayResponse struct {
 	Success bool   `json:"success"`
 	Payload string `json:"payload"`
 

@@ -21,8 +21,8 @@ import (
 )
 
 var (
-	mode            = flag.String("mode", "", "The mode of the binary, can be bridge, server or client.")
-	bridgeServerURL = flag.String("bridge-url", "", "The URL of bridge server.")
+	mode           = flag.String("mode", "", "The mode of the binary, can be relay, server or client.")
+	relayServerURL = flag.String("relay-url", "", "The URL of relay server.")
 
 	channel = flag.String("channel", "test-channel", "")
 	message = flag.String("message", "hello world", "In client mode, the message sent to the server.")
@@ -40,7 +40,7 @@ func generateCertificate() tls.Certificate {
 	template := x509.Certificate{
 		SerialNumber: serialID,
 		Subject: pkix.Name{
-			CommonName: "Self-signed bridge certificate",
+			CommonName: "Self-signed relay certificate",
 		},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(time.Hour),
@@ -73,8 +73,8 @@ func generateCertificate() tls.Certificate {
 	return cert
 }
 
-func serveBridge() error {
-	serverURL, err := url.Parse(*bridgeServerURL)
+func serveRelay() error {
+	serverURL, err := url.Parse(*relayServerURL)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -85,15 +85,15 @@ func serveBridge() error {
 		if err != nil {
 			log.Fatal(err)
 		}
-		server := corenet.NewBridgeServer(corenet.WithBridgeServerForceEvictChannelSession(true))
-		return server.Serve(mainLis, corenet.CreateBridgeListenerBasedFallback())
+		server := corenet.NewRelayServer(corenet.WithRelayServerForceEvictChannelSession(true))
+		return server.Serve(mainLis, corenet.UsePlainRelayProtocol())
 	case "quicf":
-		lis, err := corenet.CreateBridgeQuicListener(serverURL.Host, &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
+		lis, err := corenet.CreateRelayQuicListener(serverURL.Host, &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
 		if err != nil {
 			return err
 		}
-		server := corenet.NewBridgeServer(corenet.WithBridgeServerForceEvictChannelSession(true))
-		return server.Serve(lis, corenet.CreateBridgeQuicBasedFallback())
+		server := corenet.NewRelayServer(corenet.WithRelayServerForceEvictChannelSession(true))
+		return server.Serve(lis, corenet.UseQuicRelayProtocol())
 	default:
 		return fmt.Errorf("unknown protocol: %s", serverURL.Scheme)
 	}
@@ -103,12 +103,12 @@ func main() {
 	flag.Parse()
 
 	switch *mode {
-	case "bridge":
-		if err := serveBridge(); err != nil {
-			log.Printf("Bridge server returns error: %v", err)
+	case "relay":
+		if err := serveRelay(); err != nil {
+			log.Printf("Relay server returns error: %v", err)
 		}
 	case "server":
-		bridgeAdapter, err := corenet.CreateListenerFallbackURLAdapter(*bridgeServerURL, *channel, &tls.Config{InsecureSkipVerify: true})
+		relayAdapter, err := corenet.CreateListenerFallbackURLAdapter(*relayServerURL, *channel, &tls.Config{InsecureSkipVerify: true})
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -116,7 +116,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		listener := corenet.NewMultiListener(directAdapter, bridgeAdapter)
+		listener := corenet.NewMultiListener(directAdapter, relayAdapter)
 		defer listener.Close()
 		for {
 			conn, err := listener.Accept()
@@ -127,7 +127,7 @@ func main() {
 			go io.Copy(conn, conn)
 		}
 	case "client":
-		dialer := corenet.NewDialer([]string{*bridgeServerURL}, corenet.WithDialerBridgeTLSConfig(&tls.Config{InsecureSkipVerify: true}), corenet.WithDialerUpdateChannelInterval(100*time.Millisecond))
+		dialer := corenet.NewDialer([]string{*relayServerURL}, corenet.WithDialerRelayTLSConfig(&tls.Config{InsecureSkipVerify: true}), corenet.WithDialerUpdateChannelInterval(100*time.Millisecond))
 		conn, err := dialer.Dial(*channel)
 		if err != nil {
 			log.Printf("client dial failed: %v", err)

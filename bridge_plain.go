@@ -59,13 +59,13 @@ func (s *clientListenerSession) Dial() (net.Conn, error) {
 		s.Close()
 		return nil, err
 	}
-	if err := json.NewEncoder(conn).Encode(&BridgeRequest{Type: Dial, Payload: s.channel}); err != nil {
+	if err := json.NewEncoder(conn).Encode(&RelayRequest{Type: Dial, Payload: s.channel}); err != nil {
 		conn.Close()
 		s.Close()
 		return nil, err
 	}
 
-	resp := BridgeResponse{}
+	resp := RelayResponse{}
 	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
 		conn.Close()
 		s.Close()
@@ -85,11 +85,11 @@ func (s *clientListenerSession) Info() (*SessionInfo, error) {
 		return nil, err
 	}
 	defer conn.Close()
-	if err := json.NewEncoder(conn).Encode(&BridgeRequest{Type: Info, Payload: s.channel}); err != nil {
+	if err := json.NewEncoder(conn).Encode(&RelayRequest{Type: Info, Payload: s.channel}); err != nil {
 		s.Close()
 		return nil, err
 	}
-	resp := BridgeResponse{}
+	resp := RelayResponse{}
 	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
 		s.Close()
 		return nil, err
@@ -111,7 +111,7 @@ func newClientListenerBasedSession(address, channel string, tlsConfig *tls.Confi
 	if err != nil {
 		return nil, err
 	}
-	if err := json.NewEncoder(probeConn).Encode(&BridgeRequest{Type: Nop, Payload: channel}); err != nil {
+	if err := json.NewEncoder(probeConn).Encode(&RelayRequest{Type: Nop, Payload: channel}); err != nil {
 		probeConn.Close()
 		return nil, err
 	}
@@ -129,11 +129,11 @@ func newClientListenerAdapter(address, channel string, TLSConfig *tls.Config) (L
 	if err != nil {
 		return nil, err
 	}
-	if err := json.NewEncoder(controlConn).Encode(BridgeRequest{Type: Bind, Payload: channel}); err != nil {
+	if err := json.NewEncoder(controlConn).Encode(RelayRequest{Type: Bind, Payload: channel}); err != nil {
 		controlConn.Close()
 		return nil, err
 	}
-	resp := BridgeResponse{}
+	resp := RelayResponse{}
 	if err := json.NewDecoder(controlConn).Decode(&resp); err != nil {
 		controlConn.Close()
 		return nil, err
@@ -147,7 +147,7 @@ func newClientListenerAdapter(address, channel string, TLSConfig *tls.Config) (L
 		if err != nil {
 			return nil, err
 		}
-		if err := json.NewEncoder(conn).Encode(BridgeRequest{Type: Serve, Payload: channel}); err != nil {
+		if err := json.NewEncoder(conn).Encode(RelayRequest{Type: Serve, Payload: channel}); err != nil {
 			conn.Close()
 			return nil, err
 		}
@@ -155,13 +155,13 @@ func newClientListenerAdapter(address, channel string, TLSConfig *tls.Config) (L
 	}, []string{fmt.Sprintf("ttf://%s?channel=%s", address, channel)}), nil
 }
 
-type listenerBasedBridgeProtocol struct {
+type listenerBasedRelayProtocol struct {
 	serveChan   chan serveContext
 	mu          sync.Mutex
 	connChanMap map[string]chan net.Conn
 }
 
-func (p *listenerBasedBridgeProtocol) InitChannelSession(Channel string, ListenerConn net.Conn) (Session, error) {
+func (p *listenerBasedRelayProtocol) InitChannelSession(Channel string, ListenerConn net.Conn) (Session, error) {
 	p.mu.Lock()
 	connChan, exist := p.connChanMap[Channel]
 	if !exist {
@@ -196,7 +196,7 @@ func (p *listenerBasedBridgeProtocol) InitChannelSession(Channel string, Listene
 	return &session, nil
 }
 
-func (p *listenerBasedBridgeProtocol) InitClientSession(ClientConn net.Conn) (Session, error) {
+func (p *listenerBasedRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, error) {
 	p.mu.Lock()
 	clientConnectionUsed := false
 	p.mu.Unlock()
@@ -212,7 +212,7 @@ func (p *listenerBasedBridgeProtocol) InitClientSession(ClientConn net.Conn) (Se
 	return &session, nil
 }
 
-func (p *listenerBasedBridgeProtocol) serveListener() {
+func (p *listenerBasedRelayProtocol) serveListener() {
 	go func() {
 		for {
 			serve, ok := <-p.serveChan
@@ -237,11 +237,11 @@ func (p *listenerBasedBridgeProtocol) serveListener() {
 	}()
 }
 
-func (p *listenerBasedBridgeProtocol) ServeChannel() chan serveContext { return p.serveChan }
+func (p *listenerBasedRelayProtocol) ServeChannel() chan serveContext { return p.serveChan }
 
-// CreateBridgeListenerBasedFallback provides a bridge protocol for the bridge server.
-func CreateBridgeListenerBasedFallback() BridgeProtocol {
-	p := listenerBasedBridgeProtocol{connChanMap: make(map[string]chan net.Conn), serveChan: make(chan serveContext)}
+// UsePlainRelayProtocol provides a relay protocol for the relay server.
+func UsePlainRelayProtocol() RelayProtocol {
+	p := listenerBasedRelayProtocol{connChanMap: make(map[string]chan net.Conn), serveChan: make(chan serveContext)}
 	go p.serveListener()
 	return &p
 }

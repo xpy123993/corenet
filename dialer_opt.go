@@ -36,8 +36,8 @@ func WithDialerUpdateChannelAddress(v bool) DialerOption {
 	}
 }
 
-// WithDialerBridgeTLSConfig specifies the TLS configuration used to communicate with fallback server.
-func WithDialerBridgeTLSConfig(tlsConfig *tls.Config) DialerOption {
+// WithDialerRelayTLSConfig specifies the TLS configuration used to communicate with fallback server.
+func WithDialerRelayTLSConfig(tlsConfig *tls.Config) DialerOption {
 	return &dialerOptionApplier{
 		applyFn: func(d *Dialer) {
 			d.tlsConfig = tlsConfig

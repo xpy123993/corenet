@@ -68,9 +68,9 @@ func WithListenerReverseConn(conn net.Conn, dialer func() (net.Conn, error), add
 	}
 }
 
-// CreateListenerFallbackURLAdapter returns a listener adapter that listens on the specified bridge server.
-func CreateListenerFallbackURLAdapter(BridgeServerURL string, Channel string, TLSConfig *tls.Config) (ListenerAdapter, error) {
-	uri, err := url.Parse(BridgeServerURL)
+// CreateListenerFallbackURLAdapter returns a listener adapter that listens on the specified relay server.
+func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, TLSConfig *tls.Config) (ListenerAdapter, error) {
+	uri, err := url.Parse(RelayServerURL)
 	if err != nil {
 		return nil, err
 	}

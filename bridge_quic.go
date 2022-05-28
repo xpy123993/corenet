@@ -57,17 +57,17 @@ func (l *quicConnListener) Accept() (net.Conn, error) {
 func (l *quicConnListener) Addr() net.Addr { return l.Connection.LocalAddr() }
 func (l *quicConnListener) Close() error   { return l.CloseWithError(0, "") }
 
-// CreateBridgeQuicBasedFallback provides a bridge protocol based on quic.
-func CreateBridgeQuicBasedFallback() BridgeProtocol {
-	return &quicBridgeProtocol{}
+// UseQuicRelayProtocol provides a relay protocol based on quic.
+func UseQuicRelayProtocol() RelayProtocol {
+	return &quicRelayProtocol{}
 }
 
-type quicBridgeProtocol struct {
+type quicRelayProtocol struct {
 }
 
-func (p *quicBridgeProtocol) ServeChannel() chan serveContext { return nil }
+func (p *quicRelayProtocol) ServeChannel() chan serveContext { return nil }
 
-func (p *quicBridgeProtocol) InitChannelSession(Channel string, ListenerConn net.Conn) (Session, error) {
+func (p *quicRelayProtocol) InitChannelSession(Channel string, ListenerConn net.Conn) (Session, error) {
 	packetConn, ok := ListenerConn.(*quicConn)
 	if !ok {
 		return nil, fmt.Errorf("expect session connection to be quicConn")
@@ -94,7 +94,7 @@ func (p *quicBridgeProtocol) InitChannelSession(Channel string, ListenerConn net
 	return session, nil
 }
 
-func (p *quicBridgeProtocol) InitClientSession(ClientConn net.Conn) (Session, error) {
+func (p *quicRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, error) {
 	packetConn, ok := ClientConn.(*quicConn)
 	if !ok {
 		return nil, fmt.Errorf("expect session connection to be quicConn")
@@ -121,8 +121,8 @@ func (p *quicBridgeProtocol) InitClientSession(ClientConn net.Conn) (Session, er
 	return session, nil
 }
 
-// CreateBridgeQuicListener returns the listener that can be used for bridge server serving.
-func CreateBridgeQuicListener(Addr string, TLSConfig *tls.Config, QuicConfig *quic.Config) (net.Listener, error) {
+// CreateRelayQuicListener returns the listener that can be used for relay server serving.
+func CreateRelayQuicListener(Addr string, TLSConfig *tls.Config, QuicConfig *quic.Config) (net.Listener, error) {
 	lis, err := quic.ListenAddr(Addr, TLSConfig, QuicConfig)
 	if err != nil {
 		return nil, err
@@ -139,11 +139,11 @@ func newQuicListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, QuicCon
 	if err != nil {
 		return nil, err
 	}
-	if err := json.NewEncoder(stream).Encode(BridgeRequest{Type: Bind, Payload: Channel}); err != nil {
+	if err := json.NewEncoder(stream).Encode(RelayRequest{Type: Bind, Payload: Channel}); err != nil {
 		conn.CloseWithError(1, err.Error())
 		return nil, err
 	}
-	resp := BridgeResponse{}
+	resp := RelayResponse{}
 	if err := json.NewDecoder(stream).Decode(&resp); err != nil {
 		conn.CloseWithError(1, err.Error())
 		return nil, err
@@ -250,12 +250,12 @@ func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config, q
 		return nil, err
 	}
 
-	if err := json.NewEncoder(stream).Encode(&BridgeRequest{Type: Dial, Payload: channel}); err != nil {
+	if err := json.NewEncoder(stream).Encode(&RelayRequest{Type: Dial, Payload: channel}); err != nil {
 		conn.CloseWithError(1, err.Error())
 		return nil, err
 	}
 
-	resp := BridgeResponse{}
+	resp := RelayResponse{}
 	if err := json.NewDecoder(stream).Decode(&resp); err != nil {
 		conn.CloseWithError(1, err.Error())
 		return nil, err

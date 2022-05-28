@@ -21,29 +21,29 @@ func blockUntilDialSucceed(t *testing.T, invoke func() (net.Conn, error), deadli
 	return blockUntilDialSucceed(t, invoke, deadline)
 }
 
-func TestBridgeProto(t *testing.T) {
-	bridgeConnListener := corenet.NewInMemoryListener()
+func TestRelayProto(t *testing.T) {
+	relayConnListener := corenet.NewInMemoryListener()
 
-	bridgeServer := corenet.NewBridgeServer()
-	go bridgeServer.Serve(bridgeConnListener, corenet.CreateBridgeListenerBasedFallback())
-	reverseListenerConn, err := bridgeConnListener.Dial()
+	relayServer := corenet.NewRelayServer()
+	go relayServer.Serve(relayConnListener, corenet.UsePlainRelayProtocol())
+	reverseListenerConn, err := relayConnListener.Dial()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := json.NewEncoder(reverseListenerConn).Encode(corenet.BridgeRequest{Type: corenet.Bind, Payload: "test-channel"}); err != nil {
+	if err := json.NewEncoder(reverseListenerConn).Encode(corenet.RelayRequest{Type: corenet.Bind, Payload: "test-channel"}); err != nil {
 		t.Fatal(err)
 	}
-	resp := corenet.BridgeResponse{}
+	resp := corenet.RelayResponse{}
 	if err := json.NewDecoder(reverseListenerConn).Decode(&resp); err != nil {
 		t.Fatal(err)
 	}
 
 	clientListener := corenet.NewMultiListener(corenet.WithListenerReverseConn(reverseListenerConn, func() (net.Conn, error) {
-		conn, err := bridgeConnListener.Dial()
+		conn, err := relayConnListener.Dial()
 		if err != nil {
 			return nil, err
 		}
-		if err := json.NewEncoder(conn).Encode(corenet.BridgeRequest{Type: corenet.Serve, Payload: "test-channel"}); err != nil {
+		if err := json.NewEncoder(conn).Encode(corenet.RelayRequest{Type: corenet.Serve, Payload: "test-channel"}); err != nil {
 			conn.Close()
 			return nil, err
 		}
@@ -59,11 +59,11 @@ func TestBridgeProto(t *testing.T) {
 	}()
 	time.Sleep(time.Millisecond)
 
-	clientConn := blockUntilDialSucceed(t, bridgeConnListener.Dial, time.Now().Add(time.Second))
-	if err := json.NewEncoder(clientConn).Encode(&corenet.BridgeRequest{Type: corenet.Dial, Payload: "test-channel"}); err != nil {
+	clientConn := blockUntilDialSucceed(t, relayConnListener.Dial, time.Now().Add(time.Second))
+	if err := json.NewEncoder(clientConn).Encode(&corenet.RelayRequest{Type: corenet.Dial, Payload: "test-channel"}); err != nil {
 		t.Fatal(err)
 	}
-	resp = corenet.BridgeResponse{}
+	resp = corenet.RelayResponse{}
 	if err := json.NewDecoder(clientConn).Decode(&resp); err != nil {
 		t.Fatal(err)
 	}
@@ -73,31 +73,31 @@ func TestBridgeProto(t *testing.T) {
 	echoLoop(t, clientConn)
 }
 
-func TestBridgeCrossProto(t *testing.T) {
-	bridgeConnListener := corenet.NewInMemoryListener()
-	bridgeConnListenerForClient := corenet.NewInMemoryListener()
+func TestRelayCrossProto(t *testing.T) {
+	relayConnListener := corenet.NewInMemoryListener()
+	relayConnListenerForClient := corenet.NewInMemoryListener()
 
-	bridgeServer := corenet.NewBridgeServer()
-	go bridgeServer.Serve(bridgeConnListener, corenet.CreateBridgeListenerBasedFallback())
-	go bridgeServer.Serve(bridgeConnListenerForClient, corenet.CreateBridgeListenerBasedFallback())
-	reverseListenerConn, err := bridgeConnListener.Dial()
+	relayServer := corenet.NewRelayServer()
+	go relayServer.Serve(relayConnListener, corenet.UsePlainRelayProtocol())
+	go relayServer.Serve(relayConnListenerForClient, corenet.UsePlainRelayProtocol())
+	reverseListenerConn, err := relayConnListener.Dial()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := json.NewEncoder(reverseListenerConn).Encode(corenet.BridgeRequest{Type: corenet.Bind, Payload: "test-channel"}); err != nil {
+	if err := json.NewEncoder(reverseListenerConn).Encode(corenet.RelayRequest{Type: corenet.Bind, Payload: "test-channel"}); err != nil {
 		t.Fatal(err)
 	}
-	resp := corenet.BridgeResponse{}
+	resp := corenet.RelayResponse{}
 	if err := json.NewDecoder(reverseListenerConn).Decode(&resp); err != nil {
 		t.Fatal(err)
 	}
 
 	clientListener := corenet.NewMultiListener(corenet.WithListenerReverseConn(reverseListenerConn, func() (net.Conn, error) {
-		conn, err := bridgeConnListener.Dial()
+		conn, err := relayConnListener.Dial()
 		if err != nil {
 			return nil, err
 		}
-		if err := json.NewEncoder(conn).Encode(corenet.BridgeRequest{Type: corenet.Serve, Payload: "test-channel"}); err != nil {
+		if err := json.NewEncoder(conn).Encode(corenet.RelayRequest{Type: corenet.Serve, Payload: "test-channel"}); err != nil {
 			conn.Close()
 			return nil, err
 		}
@@ -113,11 +113,11 @@ func TestBridgeCrossProto(t *testing.T) {
 	}()
 	time.Sleep(time.Millisecond)
 
-	clientConn := blockUntilDialSucceed(t, bridgeConnListenerForClient.Dial, time.Now().Add(time.Second))
-	if err := json.NewEncoder(clientConn).Encode(&corenet.BridgeRequest{Type: corenet.Dial, Payload: "test-channel"}); err != nil {
+	clientConn := blockUntilDialSucceed(t, relayConnListenerForClient.Dial, time.Now().Add(time.Second))
+	if err := json.NewEncoder(clientConn).Encode(&corenet.RelayRequest{Type: corenet.Dial, Payload: "test-channel"}); err != nil {
 		t.Fatal(err)
 	}
-	resp = corenet.BridgeResponse{}
+	resp = corenet.RelayResponse{}
 	if err := json.NewDecoder(clientConn).Decode(&resp); err != nil {
 		t.Fatal(err)
 	}
