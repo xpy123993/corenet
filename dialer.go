@@ -265,9 +265,9 @@ func (d *Dialer) establishChannel(Channel string) (Session, error) {
 		}
 		session, err := d.createConnection(address, Channel)
 		if err == nil {
+			session.SetID(addressURI.Hostname())
 			return session, nil
 		}
-		session.SetID(addressURI.Hostname())
 	}
 	return nil, fmt.Errorf("%s is unavailable", Channel)
 }
