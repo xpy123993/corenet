@@ -121,6 +121,7 @@ func newClientListenerBasedSession(address, channel string, tlsConfig *tls.Confi
 		probeConn.Read(make([]byte, 1))
 		session.Close()
 	}()
+	session.SetID(fmt.Sprintf("relay://%s", address))
 	return &session, nil
 }
 

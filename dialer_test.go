@@ -160,8 +160,9 @@ func TestDialerUsePlainRelayProtocol(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if !strings.Contains(sessionID, relayServerAddr) {
-		t.Errorf("expect %s, got %v", relayServerAddr, sessionID)
+	expectID := fmt.Sprintf("relay://%s", mainListener.Addr().String())
+	if !strings.Contains(sessionID, expectID) {
+		t.Errorf("expect %s, got %v", expectID, sessionID)
 	}
 }
 
@@ -212,8 +213,72 @@ func TestDialerQuicBasedRelayProtocol(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if !strings.Contains(sessionID, relayServerAddr) {
-		t.Errorf("expect %s, got %v", relayServerAddr, sessionID)
+	expectID := fmt.Sprintf("relay://%s", relayListener.Addr().String())
+	if !strings.Contains(sessionID, expectID) {
+		t.Errorf("expect %s, got %v", expectID, sessionID)
+	}
+	wg.Wait()
+}
+
+func TestDialerListenerDifferentProtocol(t *testing.T) {
+	cert := generateCertificate(t)
+
+	relayListener, err := corenet.CreateRelayQuicListener(":0", &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relayServer := corenet.NewRelayServer()
+
+	relayPlainListener, err := tls.Listen("tcp", ":0", &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer relayPlainListener.Close()
+
+	go relayServer.Serve(relayListener, corenet.UseQuicRelayProtocol())
+	go relayServer.Serve(relayPlainListener, corenet.UsePlainRelayProtocol())
+
+	time.Sleep(10 * time.Millisecond)
+
+	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(fmt.Sprintf("quicf://%s", relayListener.Addr().String()), "test-channel", &tls.Config{
+		InsecureSkipVerify: true, NextProtos: []string{"quicf"},
+	})
+	if err != nil {
+		t.Error(err)
+	}
+	clientListener := corenet.NewMultiListener(clientListenerAdapter)
+	defer clientListener.Close()
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		conn, err := clientListener.Accept()
+		if err != nil {
+			return
+		}
+		io.Copy(conn, conn)
+		conn.Close()
+	}()
+	time.Sleep(3 * time.Millisecond)
+	dialer := corenet.NewDialer([]string{fmt.Sprintf("ttf://%s", relayPlainListener.Addr().String())}, corenet.WithDialerRelayTLSConfig(&tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"quicf"},
+	}), corenet.WithDialerUpdateChannelAddress(false))
+	conn, err := dialer.Dial("test-channel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	echoLoop(t, conn)
+	conn.Close()
+	sessionID, err := dialer.GetSessionID("test-channel")
+	if err != nil {
+		t.Error(err)
+	}
+	expectID := fmt.Sprintf("relay://%s", relayPlainListener.Addr().String())
+	if !strings.Contains(sessionID, expectID) {
+		t.Errorf("expect %s, got %v", expectID, sessionID)
 	}
 	wg.Wait()
 }

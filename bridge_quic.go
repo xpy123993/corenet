@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"sync"
 
@@ -80,7 +81,21 @@ func (p *quicRelayProtocol) InitChannelSession(Channel string, ListenerConn net.
 			if err != nil {
 				return nil, err
 			}
+			if _, err := stream.Write([]byte{Dial}); err != nil {
+				stream.CancelRead(0)
+				stream.Close()
+				return nil, err
+			}
 			return &quicConn{Stream: stream, Connection: packetConn.Connection}, nil
+		},
+		infoFn: func() (*SessionInfo, error) {
+			stream, err := packetConn.Connection.OpenStream()
+			if err != nil {
+				return nil, err
+			}
+			conn := &quicConn{Stream: stream, Connection: packetConn.Connection}
+			defer conn.Close()
+			return getSessionInfo(conn)
 		},
 	}
 	go func() {
@@ -156,7 +171,8 @@ func newQuicListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, QuicCon
 }
 
 type clientQuicSession struct {
-	conn quic.Connection
+	conn        quic.Connection
+	sessionInfo *SessionInfo
 
 	id       string
 	mu       sync.Mutex
@@ -200,31 +216,14 @@ func (s *clientQuicSession) Dial() (net.Conn, error) {
 		s.Close()
 		return nil, err
 	}
-	if _, err := stream.Write([]byte{Dial}); err != nil {
-		stream.CancelRead(1)
-		stream.Close()
-		s.Close()
-		return nil, err
-	}
 	return createTrackConn(&quicConn{Stream: stream, Connection: s.conn}, "client_quic_active_connections"), nil
 }
 
 func (s *clientQuicSession) Info() (*SessionInfo, error) {
-	stream, err := s.conn.OpenStream()
-	if err != nil {
-		s.Close()
-		return nil, err
+	if s.sessionInfo == nil {
+		return nil, fmt.Errorf("not supported")
 	}
-	defer func() {
-		stream.CancelRead(1)
-		stream.Close()
-	}()
-	sessionInfo, err := getSessionInfo(stream)
-	if err != nil {
-		s.Close()
-		return nil, err
-	}
-	return sessionInfo, nil
+	return s.sessionInfo, nil
 }
 
 func (s *clientQuicSession) ID() string {
@@ -239,8 +238,36 @@ func (s *clientQuicSession) SetID(v string) {
 	s.id = v
 }
 
+func getQuicChannelInfo(address, channel string, tlsConfig *tls.Config, quicConfig *quic.Config) (*SessionInfo, error) {
+	packetConn, err := quic.DialAddr(address, tlsConfig, quicConfig)
+	if err != nil {
+		return nil, err
+	}
+	defer packetConn.CloseWithError(0, "")
+
+	stream, err := packetConn.OpenStream()
+	if err != nil {
+		packetConn.CloseWithError(1, err.Error())
+		return nil, err
+	}
+	conn := &quicConn{Stream: stream, Connection: packetConn}
+	defer conn.Close()
+
+	if err := json.NewEncoder(conn).Encode(&RelayRequest{Type: Info, Payload: channel}); err != nil {
+		return nil, err
+	}
+	resp := RelayResponse{}
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		return nil, err
+	}
+	if !resp.Success {
+		return nil, fmt.Errorf(resp.Payload)
+	}
+	return &resp.SessionInfo, nil
+}
+
 func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config, quicConfig *quic.Config) (Session, error) {
-	conn, err := quic.DialAddr(address, tlsConfig, nil)
+	conn, err := quic.DialAddr(address, tlsConfig, quicConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -271,5 +298,11 @@ func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config, q
 		session.Close()
 	}()
 
+	sessionInfo, err := getQuicChannelInfo(address, channel, tlsConfig, quicConfig)
+	if err != nil {
+		log.Printf("Failed to obtain session info for %s: %v", channel, err)
+	}
+	session.sessionInfo = sessionInfo
+	session.SetID(fmt.Sprintf("relay://%s", address))
 	return session, nil
 }

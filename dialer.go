@@ -184,6 +184,7 @@ func newClientTCPSession(address string) (Session, error) {
 		conn.Read(make([]byte, 1))
 		session.Close()
 	}()
+	session.SetID(fmt.Sprintf("tcp://%s", address))
 	return &session, nil
 }
 
@@ -261,7 +262,6 @@ func (d *Dialer) establishChannel(Channel string) (Session, error) {
 		}
 		session, err := d.createConnection(address, Channel)
 		if err == nil {
-			session.SetID(address)
 			return session, nil
 		}
 	}
