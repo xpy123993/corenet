@@ -160,9 +160,8 @@ func TestDialerUsePlainRelayProtocol(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	expectID := fmt.Sprintf("relay://%s", mainListener.Addr().String())
-	if !strings.Contains(sessionID, expectID) {
-		t.Errorf("expect %s, got %v", expectID, sessionID)
+	if !strings.Contains(mainListener.Addr().String(), sessionID) {
+		t.Errorf("expect %s, got %v", mainListener.Addr().String(), sessionID)
 	}
 }
 
@@ -213,9 +212,8 @@ func TestDialerQuicBasedRelayProtocol(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	expectID := fmt.Sprintf("relay://%s", relayListener.Addr().String())
-	if !strings.Contains(sessionID, expectID) {
-		t.Errorf("expect %s, got %v", expectID, sessionID)
+	if !strings.Contains(relayListener.Addr().String(), sessionID) {
+		t.Errorf("expect %s, got %v", relayListener.Addr().String(), sessionID)
 	}
 	wg.Wait()
 }
@@ -276,9 +274,8 @@ func TestDialerListenerDifferentProtocol(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	expectID := fmt.Sprintf("relay://%s", relayPlainListener.Addr().String())
-	if !strings.Contains(sessionID, expectID) {
-		t.Errorf("expect %s, got %v", expectID, sessionID)
+	if !strings.Contains(relayPlainListener.Addr().String(), sessionID) {
+		t.Errorf("expect %s, got %v", relayPlainListener.Addr().String(), sessionID)
 	}
 	wg.Wait()
 }
@@ -335,8 +332,8 @@ func TestDialerUpgradeSession(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if !strings.HasPrefix(sessionID, "tcp://") {
-		t.Errorf("expect %s to have tcp prefix", sessionID)
+	if !strings.HasPrefix(sessionID, "127.0.0.1") {
+		t.Errorf("expect %s to be localhost", sessionID)
 	}
 	wg.Wait()
 }

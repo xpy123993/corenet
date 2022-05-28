@@ -184,7 +184,6 @@ func newClientTCPSession(address string) (Session, error) {
 		conn.Read(make([]byte, 1))
 		session.Close()
 	}()
-	session.SetID(fmt.Sprintf("tcp://%s", address))
 	return &session, nil
 }
 
@@ -235,16 +234,28 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 	}
 	switch uri.Scheme {
 	case "tcp":
-		return newClientTCPSession(uri.Host)
+		session, err := newClientTCPSession(uri.Host)
+		if err == nil {
+			session.SetID(uri.Hostname())
+		}
+		return session, err
 	case "ttf":
-		return newClientListenerBasedSession(uri.Host, channel, d.tlsConfig)
+		session, err := newClientListenerBasedSession(uri.Host, channel, d.tlsConfig)
+		if err == nil {
+			session.SetID(uri.Hostname())
+		}
+		return session, err
 	case "quicf":
 		var TLSConfig tls.Config
 		if d.tlsConfig != nil {
 			TLSConfig = *d.tlsConfig
 		}
 		TLSConfig.NextProtos = append(TLSConfig.NextProtos, "quicf")
-		return newClientQuicBasedSession(uri.Host, channel, &TLSConfig, d.quicConfig)
+		session, err := newClientQuicBasedSession(uri.Host, channel, &TLSConfig, d.quicConfig)
+		if err == nil {
+			session.SetID(uri.Hostname())
+		}
+		return session, err
 	}
 	return nil, fmt.Errorf("unknown protocol: %s", address)
 }

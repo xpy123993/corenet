@@ -303,6 +303,5 @@ func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config, q
 		log.Printf("Failed to obtain session info for %s: %v", channel, err)
 	}
 	session.sessionInfo = sessionInfo
-	session.SetID(fmt.Sprintf("relay://%s", address))
 	return session, nil
 }
