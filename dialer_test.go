@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/xpy123993/corenet"
+	"github.com/xtaci/kcp-go"
 )
 
 func generateCertificate(t *testing.T) tls.Certificate {
@@ -110,19 +111,7 @@ func TestRawDialer(t *testing.T) {
 	}
 }
 
-func TestDialerUsePlainRelayProtocol(t *testing.T) {
-	cert := generateCertificate(t)
-	mainListener, err := tls.Listen("tcp", ":0", &tls.Config{
-		Certificates: []tls.Certificate{cert},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	relayServer := corenet.NewRelayServer()
-	go relayServer.Serve(mainListener, corenet.UsePlainRelayProtocol())
-	time.Sleep(3 * time.Millisecond)
-	relayServerAddr := fmt.Sprintf("ttf://%s", mainListener.Addr().String())
-
+func listenerDialerRoutine(t *testing.T, relayServerAddr, expectSessionID string) {
 	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(relayServerAddr, "test-channel", &tls.Config{
 		InsecureSkipVerify: true,
 	})
@@ -160,9 +149,25 @@ func TestDialerUsePlainRelayProtocol(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if !strings.Contains(mainListener.Addr().String(), sessionID) {
-		t.Errorf("expect %s, got %v", mainListener.Addr().String(), sessionID)
+	if !strings.Contains(expectSessionID, sessionID) {
+		t.Errorf("expect %s, got %v", expectSessionID, sessionID)
 	}
+}
+
+func TestDialerUsePlainRelayTCPProtocol(t *testing.T) {
+	cert := generateCertificate(t)
+	mainListener, err := tls.Listen("tcp", ":0", &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	relayServer := corenet.NewRelayServer()
+	go relayServer.Serve(mainListener, corenet.UsePlainRelayProtocol())
+	time.Sleep(3 * time.Millisecond)
+	relayServerAddr := fmt.Sprintf("ttf://%s", mainListener.Addr().String())
+
+	listenerDialerRoutine(t, relayServerAddr, mainListener.Addr().String())
 }
 
 func TestDialerQuicBasedRelayProtocol(t *testing.T) {
@@ -177,45 +182,22 @@ func TestDialerQuicBasedRelayProtocol(t *testing.T) {
 	time.Sleep(3 * time.Millisecond)
 	relayServerAddr := fmt.Sprintf("quicf://%s", relayListener.Addr().String())
 
-	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(relayServerAddr, "test-channel", &tls.Config{
-		InsecureSkipVerify: true, NextProtos: []string{"quicf"},
-	})
-	if err != nil {
-		t.Error(err)
-	}
-	clientListener := corenet.NewMultiListener(clientListenerAdapter)
-	defer clientListener.Close()
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		conn, err := clientListener.Accept()
-		if err != nil {
-			return
-		}
-		io.Copy(conn, conn)
-		conn.Close()
-	}()
-	time.Sleep(3 * time.Millisecond)
-	dialer := corenet.NewDialer([]string{relayServerAddr}, corenet.WithDialerRelayTLSConfig(&tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{"quicf"},
-	}))
-	conn, err := dialer.Dial("test-channel")
+	listenerDialerRoutine(t, relayServerAddr, relayListener.Addr().String())
+}
+
+func TestDialerUsePlainRelayKCPProtocol(t *testing.T) {
+	cert := generateCertificate(t)
+
+	relayListener, err := kcp.Listen(":0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	echoLoop(t, conn)
-	conn.Close()
+	relayServer := corenet.NewRelayServer()
+	go relayServer.Serve(tls.NewListener(relayListener, &tls.Config{Certificates: []tls.Certificate{cert}}), corenet.UsePlainRelayProtocol())
+	time.Sleep(3 * time.Millisecond)
+	relayServerAddr := fmt.Sprintf("ktf://%s", relayListener.Addr().String())
 
-	sessionID, err := dialer.GetSessionID("test-channel")
-	if err != nil {
-		t.Error(err)
-	}
-	if !strings.Contains(relayListener.Addr().String(), sessionID) {
-		t.Errorf("expect %s, got %v", relayListener.Addr().String(), sessionID)
-	}
-	wg.Wait()
+	listenerDialerRoutine(t, relayServerAddr, relayListener.Addr().String())
 }
 
 func TestDialerListenerDifferentProtocol(t *testing.T) {

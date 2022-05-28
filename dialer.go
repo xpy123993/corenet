@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lucas-clemente/quic-go"
+	"github.com/xtaci/kcp-go"
 )
 
 type clientSession struct {
@@ -236,7 +237,17 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 	case "tcp":
 		return newClientTCPSession(uri.Host)
 	case "ttf":
-		return newClientListenerBasedSession(uri.Host, channel, d.tlsConfig)
+		return newClientListenerBasedSession(channel, func() (net.Conn, error) {
+			return tls.Dial("tcp", uri.Host, d.tlsConfig)
+		})
+	case "ktf":
+		return newClientListenerBasedSession(channel, func() (net.Conn, error) {
+			conn, err := kcp.Dial(uri.Host)
+			if err != nil {
+				return nil, err
+			}
+			return tls.Client(conn, d.tlsConfig), nil
+		})
 	case "quicf":
 		var TLSConfig tls.Config
 		if d.tlsConfig != nil {

@@ -1,7 +1,6 @@
 package corenet
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,10 +9,9 @@ import (
 )
 
 type clientListenerSession struct {
-	conn      net.Conn
-	address   string
-	channel   string
-	tlsConfig *tls.Config
+	conn             net.Conn
+	channel          string
+	underlyingDialer func() (net.Conn, error)
 
 	id       string
 	mu       sync.Mutex
@@ -54,7 +52,7 @@ func (s *clientListenerSession) SetID(v string) {
 }
 
 func (s *clientListenerSession) Dial() (net.Conn, error) {
-	conn, err := tls.Dial("tcp", s.address, s.tlsConfig)
+	conn, err := s.underlyingDialer()
 	if err != nil {
 		s.Close()
 		return nil, err
@@ -79,7 +77,7 @@ func (s *clientListenerSession) Dial() (net.Conn, error) {
 }
 
 func (s *clientListenerSession) Info() (*SessionInfo, error) {
-	conn, err := tls.Dial("tcp", s.address, s.tlsConfig)
+	conn, err := s.underlyingDialer()
 	if err != nil {
 		s.Close()
 		return nil, err
@@ -106,8 +104,8 @@ func (s *clientListenerSession) Done() chan struct{} {
 	return s.close
 }
 
-func newClientListenerBasedSession(address, channel string, tlsConfig *tls.Config) (Session, error) {
-	probeConn, err := tls.Dial("tcp", address, tlsConfig)
+func newClientListenerBasedSession(channel string, underlyingDialer func() (net.Conn, error)) (Session, error) {
+	probeConn, err := underlyingDialer()
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +114,7 @@ func newClientListenerBasedSession(address, channel string, tlsConfig *tls.Confi
 		return nil, err
 	}
 
-	session := clientListenerSession{conn: probeConn, address: address, channel: channel, tlsConfig: tlsConfig, close: make(chan struct{})}
+	session := clientListenerSession{conn: probeConn, underlyingDialer: underlyingDialer, channel: channel, close: make(chan struct{})}
 	go func() {
 		probeConn.Read(make([]byte, 1))
 		session.Close()
@@ -124,8 +122,8 @@ func newClientListenerBasedSession(address, channel string, tlsConfig *tls.Confi
 	return &session, nil
 }
 
-func newClientListenerAdapter(address, channel string, TLSConfig *tls.Config) (ListenerAdapter, error) {
-	controlConn, err := tls.Dial("tcp", address, TLSConfig)
+func newClientListenerAdapter(address, channel string, underlyingDialer func() (net.Conn, error)) (ListenerAdapter, error) {
+	controlConn, err := underlyingDialer()
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +141,7 @@ func newClientListenerAdapter(address, channel string, TLSConfig *tls.Config) (L
 		return nil, fmt.Errorf("remote error: %v", resp.Payload)
 	}
 	return WithListenerReverseConn(controlConn, func() (net.Conn, error) {
-		conn, err := tls.Dial("tcp", address, TLSConfig)
+		conn, err := underlyingDialer()
 		if err != nil {
 			return nil, err
 		}
