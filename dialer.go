@@ -234,28 +234,16 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 	}
 	switch uri.Scheme {
 	case "tcp":
-		session, err := newClientTCPSession(uri.Host)
-		if err == nil {
-			session.SetID(uri.Hostname())
-		}
-		return session, err
+		return newClientTCPSession(uri.Host)
 	case "ttf":
-		session, err := newClientListenerBasedSession(uri.Host, channel, d.tlsConfig)
-		if err == nil {
-			session.SetID(uri.Hostname())
-		}
-		return session, err
+		return newClientListenerBasedSession(uri.Host, channel, d.tlsConfig)
 	case "quicf":
 		var TLSConfig tls.Config
 		if d.tlsConfig != nil {
 			TLSConfig = *d.tlsConfig
 		}
 		TLSConfig.NextProtos = append(TLSConfig.NextProtos, "quicf")
-		session, err := newClientQuicBasedSession(uri.Host, channel, &TLSConfig, d.quicConfig)
-		if err == nil {
-			session.SetID(uri.Hostname())
-		}
-		return session, err
+		return newClientQuicBasedSession(uri.Host, channel, &TLSConfig, d.quicConfig)
 	}
 	return nil, fmt.Errorf("unknown protocol: %s", address)
 }
@@ -268,13 +256,18 @@ func (d *Dialer) establishChannel(Channel string) (Session, error) {
 	curSession := d.channelSessions[Channel]
 	d.mu.RUnlock()
 	for _, address := range addresses {
-		if curSession != nil && !curSession.IsClosed() && curSession.ID() == address {
+		addressURI, err := url.Parse(address)
+		if err != nil {
+			continue
+		}
+		if curSession != nil && !curSession.IsClosed() && curSession.ID() == addressURI.Hostname() {
 			return curSession, nil
 		}
 		session, err := d.createConnection(address, Channel)
 		if err == nil {
 			return session, nil
 		}
+		session.SetID(addressURI.Hostname())
 	}
 	return nil, fmt.Errorf("%s is unavailable", Channel)
 }
