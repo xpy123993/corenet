@@ -1,7 +1,6 @@
 package corenet
 
 import (
-	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -162,24 +161,7 @@ type listenerBasedBridgeProtocol struct {
 	connChanMap map[string]chan net.Conn
 }
 
-func (p *listenerBasedBridgeProtocol) BridgeSession(Channel string, ClientConn net.Conn, ListenerSession Session) error {
-	remoteConn, err := ListenerSession.Dial()
-	if err != nil {
-		return fmt.Errorf("channel connection is reset")
-	}
-	defer remoteConn.Close()
-
-	globalStatsCounterMap.Inc("bridge_active_plain_connection")
-	defer globalStatsCounterMap.Dec("bridge_active_plain_connection")
-
-	ctx, cancelFn := context.WithCancel(context.Background())
-	go func() { io.Copy(ClientConn, remoteConn); cancelFn() }()
-	go func() { io.Copy(remoteConn, ClientConn); cancelFn() }()
-	<-ctx.Done()
-	return nil
-}
-
-func (p *listenerBasedBridgeProtocol) InitSession(Channel string, ListenerConn net.Conn) (Session, error) {
+func (p *listenerBasedBridgeProtocol) InitChannelSession(Channel string, ListenerConn net.Conn) (Session, error) {
 	p.mu.Lock()
 	connChan, exist := p.connChanMap[Channel]
 	if !exist {
@@ -211,6 +193,22 @@ func (p *listenerBasedBridgeProtocol) InitSession(Channel string, ListenerConn n
 		<-session.done
 		ListenerConn.Close()
 	}()
+	return &session, nil
+}
+
+func (p *listenerBasedBridgeProtocol) InitClientSession(ClientConn net.Conn) (Session, error) {
+	p.mu.Lock()
+	clientConnectionUsed := false
+	p.mu.Unlock()
+	session := clientSession{dialer: func() (net.Conn, error) {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if clientConnectionUsed {
+			return nil, io.EOF
+		}
+		clientConnectionUsed = true
+		return ClientConn, nil
+	}, isClosed: false, done: make(chan struct{})}
 	return &session, nil
 }
 

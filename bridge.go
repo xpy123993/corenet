@@ -1,8 +1,10 @@
 package corenet
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"sync"
@@ -10,10 +12,10 @@ import (
 
 // BridgeProtocol specifies the bridge protocol.
 type BridgeProtocol interface {
-	// InitSession converts a listener connection to a session.
-	InitSession(Channel string, ListenerConn net.Conn) (Session, error)
-	// BridgeSession serves builds connections between a client connection and a listener session.
-	BridgeSession(Channel string, ClientConn net.Conn, ListenerSession Session) error
+	// InitClientSession converts a client connection to a session.
+	InitClientSession(ClientConn net.Conn) (Session, error)
+	// InitChannelSession converts a listener connection to a session.
+	InitChannelSession(Channel string, ListenerConn net.Conn) (Session, error)
 	// ServeChannel is the channel where the bridge server will redirect serve requests.
 	// Optional, can return nil.
 	ServeChannel() chan serveContext
@@ -109,7 +111,7 @@ func (s *BridgeServer) serveBind(conn net.Conn, channel string) error {
 		return err
 	}
 
-	session, err := s.sessionProtocol.InitSession(channel, conn)
+	session, err := s.sessionProtocol.InitChannelSession(channel, conn)
 	if err != nil {
 		return err
 	}
@@ -144,7 +146,35 @@ func (s *BridgeServer) serveDial(conn net.Conn, req *BridgeRequest) error {
 	if err := json.NewEncoder(conn).Encode(BridgeResponse{Success: true}); err != nil {
 		return err
 	}
-	return s.sessionProtocol.BridgeSession(req.Payload, conn, channelSession)
+	clientSession, err := s.sessionProtocol.InitClientSession(conn)
+	if err != nil {
+		return err
+	}
+	wg := sync.WaitGroup{}
+	for !clientSession.IsClosed() {
+		conn, err := clientSession.Dial()
+		if err != nil {
+			break
+		}
+		wg.Add(1)
+		go func(conn net.Conn) {
+			defer wg.Done()
+			defer conn.Close()
+			channelConn, err := channelSession.Dial()
+			if err != nil {
+				return
+			}
+			defer channelConn.Close()
+			globalStatsCounterMap.Inc("bridge_active_connection")
+			defer globalStatsCounterMap.Dec("bridge_active_connection")
+			ctx, cancelFn := context.WithCancel(context.Background())
+			go func() { io.Copy(channelConn, conn); cancelFn() }()
+			go func() { io.Copy(conn, channelConn); cancelFn() }()
+			<-ctx.Done()
+		}(conn)
+	}
+	wg.Wait()
+	return nil
 }
 
 func (s *BridgeServer) serveInfo(conn net.Conn, channel string) error {

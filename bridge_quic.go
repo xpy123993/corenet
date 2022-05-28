@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"sync"
 
@@ -68,7 +67,7 @@ type quicBridgeProtocol struct {
 
 func (p *quicBridgeProtocol) ServeChannel() chan serveContext { return nil }
 
-func (p *quicBridgeProtocol) InitSession(Channel string, ListenerConn net.Conn) (Session, error) {
+func (p *quicBridgeProtocol) InitChannelSession(Channel string, ListenerConn net.Conn) (Session, error) {
 	packetConn, ok := ListenerConn.(*quicConn)
 	if !ok {
 		return nil, fmt.Errorf("expect session connection to be quicConn")
@@ -95,35 +94,31 @@ func (p *quicBridgeProtocol) InitSession(Channel string, ListenerConn net.Conn) 
 	return session, nil
 }
 
-func (p *quicBridgeProtocol) BridgeSession(Channel string, ClientConn net.Conn, ListenerSession Session) error {
-	clientQuicConn, ok := ClientConn.(*quicConn)
+func (p *quicBridgeProtocol) InitClientSession(ClientConn net.Conn) (Session, error) {
+	packetConn, ok := ClientConn.(*quicConn)
 	if !ok {
-		return fmt.Errorf("expect client connection to be quicConn")
+		return nil, fmt.Errorf("expect session connection to be quicConn")
 	}
-	for {
-		clientConn, err := clientQuicConn.Connection.AcceptStream(context.Background())
-		if err != nil {
-			return err
-		}
-		go func(clientConn quic.Stream) {
-			defer func() {
-				clientConn.CancelRead(1)
-				clientConn.Close()
-			}()
-			listenerConn, err := ListenerSession.Dial()
+	session := &clientSession{
+		done:     make(chan struct{}),
+		isClosed: false,
+		dialer: func() (net.Conn, error) {
+			stream, err := packetConn.Connection.AcceptStream(packetConn.Context())
 			if err != nil {
-				return
+				return nil, err
 			}
-			defer listenerConn.Close()
-			globalStatsCounterMap.Inc("bridge_active_quic_connection")
-			defer globalStatsCounterMap.Dec("bridge_active_quic_connection")
-
-			ctx, cancelFn := context.WithCancel(clientConn.Context())
-			go func() { io.Copy(clientConn, listenerConn); cancelFn() }()
-			go func() { io.Copy(listenerConn, clientConn); cancelFn() }()
-			<-ctx.Done()
-		}(clientConn)
+			return &quicConn{Stream: stream, Connection: packetConn.Connection}, nil
+		},
 	}
+	go func() {
+		select {
+		case <-session.done:
+		case <-packetConn.Context().Done():
+			session.Close()
+		}
+		packetConn.Connection.CloseWithError(1, "")
+	}()
+	return session, nil
 }
 
 // CreateBridgeQuicListener returns the listener that can be used for bridge server serving.
