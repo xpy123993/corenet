@@ -86,12 +86,17 @@ func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, TLS
 		})
 	case "ktf":
 		// kcp+tls+fallback
+		var tlsConfig tls.Config
+		if TLSConfig != nil {
+			tlsConfig = *TLSConfig
+		}
+		tlsConfig.ServerName = uri.Hostname()
 		return newClientListenerAdapter(uri.Host, Channel, func() (net.Conn, error) {
 			conn, err := kcp.Dial(uri.Host)
 			if err != nil {
 				return nil, err
 			}
-			return tls.Client(conn, TLSConfig), nil
+			return tls.Client(conn, &tlsConfig), nil
 		})
 	case "quicf":
 		// quic+fallback
