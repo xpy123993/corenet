@@ -26,8 +26,6 @@ type BridgeServer struct {
 	mu         sync.RWMutex
 	routeTable map[string]Session
 
-	sessionProtocol BridgeProtocol
-
 	logError                 bool
 	forceEvictChannelSession bool
 }
@@ -69,10 +67,9 @@ type serveContext struct {
 }
 
 // NewBridgeServer returns a bridge server.
-func NewBridgeServer(SessionProtocol BridgeProtocol, Options ...BridgeServerOption) *BridgeServer {
+func NewBridgeServer(Options ...BridgeServerOption) *BridgeServer {
 	bs := &BridgeServer{
-		routeTable:      make(map[string]Session),
-		sessionProtocol: SessionProtocol,
+		routeTable: make(map[string]Session),
 
 		logError:                 false,
 		forceEvictChannelSession: false,
@@ -106,12 +103,12 @@ func (s *BridgeServer) registerChannel(channel string, session Session) error {
 	return nil
 }
 
-func (s *BridgeServer) serveBind(conn net.Conn, channel string) error {
+func (s *BridgeServer) serveBind(conn net.Conn, channel string, protocol BridgeProtocol) error {
 	if err := json.NewEncoder(conn).Encode(BridgeResponse{Success: true}); err != nil {
 		return err
 	}
 
-	session, err := s.sessionProtocol.InitChannelSession(channel, conn)
+	session, err := protocol.InitChannelSession(channel, conn)
 	if err != nil {
 		return err
 	}
@@ -134,7 +131,7 @@ func (s *BridgeServer) serveBind(conn net.Conn, channel string) error {
 	return nil
 }
 
-func (s *BridgeServer) serveDial(conn net.Conn, req *BridgeRequest) error {
+func (s *BridgeServer) serveDial(conn net.Conn, req *BridgeRequest, protocol BridgeProtocol) error {
 	globalStatsCounterMap.Inc("bridge_active_dialer")
 	defer globalStatsCounterMap.Dec("bridge_active_dialer")
 
@@ -146,7 +143,7 @@ func (s *BridgeServer) serveDial(conn net.Conn, req *BridgeRequest) error {
 	if err := json.NewEncoder(conn).Encode(BridgeResponse{Success: true}); err != nil {
 		return err
 	}
-	clientSession, err := s.sessionProtocol.InitClientSession(conn)
+	clientSession, err := protocol.InitClientSession(conn)
 	if err != nil {
 		return err
 	}
@@ -194,7 +191,7 @@ func (s *BridgeServer) serveInfo(conn net.Conn, channel string) error {
 	return nil
 }
 
-func (s *BridgeServer) serveConnection(conn net.Conn) {
+func (s *BridgeServer) serveConnection(conn net.Conn, protocol BridgeProtocol) {
 	globalStatsCounterMap.Inc("bridge_active_connection")
 	defer globalStatsCounterMap.Dec("bridge_active_connection")
 
@@ -211,14 +208,14 @@ func (s *BridgeServer) serveConnection(conn net.Conn) {
 	var result error
 	switch req.Type {
 	case Bind:
-		result = s.serveBind(conn, req.Payload)
+		result = s.serveBind(conn, req.Payload, protocol)
 	case Dial:
-		result = s.serveDial(conn, &req)
+		result = s.serveDial(conn, &req, protocol)
 	case Info:
 		result = s.serveInfo(conn, req.Payload)
 	case Serve:
-		if s.sessionProtocol.ServeChannel() != nil {
-			s.sessionProtocol.ServeChannel() <- serveContext{conn: conn, channel: req.Payload}
+		if protocol.ServeChannel() != nil {
+			protocol.ServeChannel() <- serveContext{conn: conn, channel: req.Payload}
 			closeConnectionAfterExit = false
 		}
 	case Nop:
@@ -231,12 +228,12 @@ func (s *BridgeServer) serveConnection(conn net.Conn) {
 }
 
 // Serve starts the bridge service on the specified listener.
-func (s *BridgeServer) Serve(listener net.Listener) error {
+func (s *BridgeServer) Serve(listener net.Listener, protocol BridgeProtocol) error {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			return err
 		}
-		go s.serveConnection(conn)
+		go s.serveConnection(conn, protocol)
 	}
 }

@@ -118,8 +118,8 @@ func TestDialerListenerBasedBridge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bridge := corenet.NewBridgeServer(corenet.CreateBridgeListenerBasedFallback())
-	go bridge.Serve(mainListener)
+	bridge := corenet.NewBridgeServer()
+	go bridge.Serve(mainListener, corenet.CreateBridgeListenerBasedFallback())
 	time.Sleep(3 * time.Millisecond)
 	bridgeServerAddr := fmt.Sprintf("ttf://%s", mainListener.Addr().String())
 
@@ -172,8 +172,8 @@ func TestDialerQuicBasedBridge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bridge := corenet.NewBridgeServer(corenet.CreateBridgeQuicBasedFallback())
-	go bridge.Serve(bridgeListener)
+	bridge := corenet.NewBridgeServer()
+	go bridge.Serve(bridgeListener, corenet.CreateBridgeQuicBasedFallback())
 	time.Sleep(3 * time.Millisecond)
 	bridgeServerAddr := fmt.Sprintf("quicf://%s", bridgeListener.Addr().String())
 
@@ -225,8 +225,8 @@ func TestDialerUpgradeSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bridge := corenet.NewBridgeServer(corenet.CreateBridgeQuicBasedFallback())
-	go bridge.Serve(bridgeListener)
+	bridge := corenet.NewBridgeServer()
+	go bridge.Serve(bridgeListener, corenet.CreateBridgeQuicBasedFallback())
 	time.Sleep(3 * time.Millisecond)
 	bridgeServerAddr := fmt.Sprintf("quicf://%s", bridgeListener.Addr().String())
 
