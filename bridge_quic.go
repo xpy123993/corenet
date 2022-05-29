@@ -98,14 +98,6 @@ func (p *quicRelayProtocol) InitChannelSession(Channel string, ListenerConn net.
 		closer:         func() error { return packetConn.Connection.CloseWithError(1, "") },
 		isDialerClosed: func() bool { return packetConn.Connection.Context().Err() != nil },
 	}
-	go func() {
-		select {
-		case <-session.done:
-		case <-packetConn.Context().Done():
-			session.Close()
-		}
-		packetConn.Connection.CloseWithError(1, "")
-	}()
 	return session, nil
 }
 
@@ -127,14 +119,6 @@ func (p *quicRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, err
 		closer:         func() error { return packetConn.Connection.CloseWithError(1, "") },
 		isDialerClosed: func() bool { return packetConn.Connection.Context().Err() != nil },
 	}
-	go func() {
-		select {
-		case <-session.done:
-		case <-packetConn.Context().Done():
-			session.Close()
-		}
-		packetConn.Connection.CloseWithError(1, "")
-	}()
 	return session, nil
 }
 
