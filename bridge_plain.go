@@ -159,7 +159,7 @@ func (p *listenerBasedRelayProtocol) InitChannelSession(Channel string, Listener
 		mu.Lock()
 		defer mu.Unlock()
 		if time.Since(lastUpdate) < 10*time.Second {
-			return true
+			return false
 		}
 		if _, err := ListenerConn.Write([]byte{Nop}); err != nil {
 			return true

@@ -55,6 +55,7 @@ func TestRelayProto(t *testing.T) {
 		conn, err := clientListener.Accept()
 		if err != nil {
 			t.Error(err)
+			return
 		}
 		io.Copy(conn, conn)
 	}()
