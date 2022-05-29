@@ -181,6 +181,7 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 		if err != nil {
 			return err
 		}
+		trackEntry := globalStatsCounterMap.getEntry(fmt.Sprintf("corenet_relay_active_serving_connections{client=\"%s\", channel=\"%s\"}", peerContext.Name, req.Payload))
 		go func(conn net.Conn) {
 			defer conn.Close()
 			channelConn, err := channelSession.OpenConnection()
@@ -189,9 +190,8 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 			}
 			defer channelConn.Close()
 
-			trackLabel := fmt.Sprintf("corenet_relay_active_serving_connections{client=\"%s\", channel=\"%s\"}", peerContext.Name, req.Payload)
-			globalStatsCounterMap.Inc(trackLabel)
-			defer globalStatsCounterMap.Dec(trackLabel)
+			trackEntry.Inc()
+			defer trackEntry.Dec()
 
 			ctx, cancelFn := context.WithCancel(clientContext)
 			go func() {
