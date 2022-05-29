@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"sync"
-	"time"
 )
 
 type clientListenerSession struct {
@@ -153,21 +152,12 @@ func (p *listenerBasedRelayProtocol) InitChannelSession(Channel string, Listener
 			return nil, err
 		}
 		return sessionInfo, nil
-	}, isClosed: false, done: make(chan struct{}), closer: ListenerConn.Close}
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		select {
-		case <-session.done:
-			return
-		case <-ticker.C:
-			if _, err := ListenerConn.Write([]byte{Nop}); err != nil {
-				ListenerConn.Close()
-				session.Close()
-				return
-			}
+	}, isClosed: false, done: make(chan struct{}), closer: ListenerConn.Close, isDialerClosed: func() bool {
+		if _, err := ListenerConn.Write([]byte{Nop}); err != nil {
+			return true
 		}
-	}()
+		return false
+	}}
 	return &session, nil
 }
 
