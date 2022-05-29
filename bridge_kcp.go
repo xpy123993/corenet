@@ -12,11 +12,13 @@ import (
 	"github.com/xtaci/smux"
 )
 
+// kcpListener is a wrapper to accept kcp connection and apply the corresponding config.
 type kcpListener struct {
 	*kcp.Listener
 	config *KCPConfig
 }
 
+// CreateRelayKCPListener creates a KCP listener for the relay service.
 func CreateRelayKCPListener(Addr string, TLSConfig *tls.Config, KCPConfig *KCPConfig) (net.Listener, error) {
 	lis, err := kcp.ListenWithOptions(Addr, nil, KCPConfig.DataShard, KCPConfig.ParityShard)
 	if err != nil {
@@ -49,6 +51,7 @@ func createKCPConnection(Addr string, TLSConfig *tls.Config, kcpConfig *KCPConfi
 	return tls.Client(conn, TLSConfig), nil
 }
 
+// kcpConnListener is a wrapper to convert a smux.Session as a listener.
 type kcpConnListener struct {
 	*smux.Session
 }
@@ -98,6 +101,8 @@ func (p *kcpRelayProtocol) InitChannelSession(Channel string, ListenerConn net.C
 			defer stream.Close()
 			return getSessionInfo(stream)
 		},
+		isDialerClosed: connSession.IsClosed,
+		closer:         connSession.Close,
 	}
 	return session, nil
 }
@@ -117,6 +122,8 @@ func (p *kcpRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, erro
 			}
 			return stream, nil
 		},
+		isDialerClosed: connSession.IsClosed,
+		closer:         connSession.Close,
 	}
 	return session, nil
 }
@@ -144,7 +151,7 @@ func newKcpListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, KCPConfi
 		conn.Close()
 		return nil, err
 	}
-	return WithListener(&kcpConnListener{server}, []string{fmt.Sprintf("kcpf://%s?channel=%s", Addr, Channel)}), nil
+	return WithListener(&kcpConnListener{server}, []string{fmt.Sprintf("ktf://%s?channel=%s", Addr, Channel)}), nil
 }
 
 type clientKcpSession struct {
@@ -157,9 +164,7 @@ type clientKcpSession struct {
 	close    chan struct{}
 }
 
-func (s *clientKcpSession) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *clientKcpSession) unsafeClose() error {
 	if s.isClosed {
 		return nil
 	}
@@ -169,6 +174,12 @@ func (s *clientKcpSession) Close() error {
 	return nil
 }
 
+func (s *clientKcpSession) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.unsafeClose()
+}
+
 func (s *clientKcpSession) IsClosed() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -176,6 +187,7 @@ func (s *clientKcpSession) IsClosed() bool {
 		return true
 	}
 	if s.conn.IsClosed() {
+		s.unsafeClose()
 		s.isClosed = true
 	}
 	return s.isClosed

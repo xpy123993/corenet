@@ -119,10 +119,6 @@ func newClientListenerBasedSession(channel string, underlyingDialer func() (net.
 		probeConn.Read(make([]byte, 1))
 		session.Close()
 	}()
-	go func() {
-		<-session.Done()
-		probeConn.Close()
-	}()
 	return &session, nil
 }
 
@@ -190,11 +186,7 @@ func (p *listenerBasedRelayProtocol) InitChannelSession(Channel string, Listener
 			return nil, err
 		}
 		return sessionInfo, nil
-	}, isClosed: false, done: make(chan struct{})}
-	go func() {
-		<-session.done
-		ListenerConn.Close()
-	}()
+	}, isClosed: false, done: make(chan struct{}), closer: ListenerConn.Close}
 	return &session, nil
 }
 
@@ -239,7 +231,7 @@ func (p *listenerBasedRelayProtocol) InitClientSession(ClientConn net.Conn) (Ses
 		returned = true
 		defer p.mu.Unlock()
 		return conn, nil
-	}, isClosed: false, done: make(chan struct{})}
+	}, isClosed: false, done: make(chan struct{}), closer: conn.Close}
 	return &session, nil
 }
 

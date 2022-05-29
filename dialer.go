@@ -13,9 +13,11 @@ import (
 )
 
 type clientSession struct {
-	dialer func() (net.Conn, error)
-	infoFn func() (*SessionInfo, error)
-	addr   string
+	dialer         func() (net.Conn, error)
+	infoFn         func() (*SessionInfo, error)
+	addr           string
+	isDialerClosed func() bool
+	closer         func() error
 
 	mu       sync.RWMutex
 	isClosed bool
@@ -35,15 +37,22 @@ type Session interface {
 	SetID(string)
 }
 
-func (s *clientSession) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *clientSession) unsafeClose() error {
 	if s.isClosed {
 		return nil
 	}
 	s.isClosed = true
+	if s.closer != nil {
+		s.closer()
+	}
 	close(s.done)
 	return nil
+}
+
+func (s *clientSession) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.unsafeClose()
 }
 
 func (s *clientSession) Done() chan struct{} {
@@ -53,12 +62,22 @@ func (s *clientSession) Done() chan struct{} {
 }
 
 func (s *clientSession) IsClosed() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.isClosed {
+		return true
+	}
+	if s.isDialerClosed != nil && s.isDialerClosed() {
+		s.unsafeClose()
+		s.isClosed = true
+	}
 	return s.isClosed
 }
 
 func (s *clientSession) Dial() (net.Conn, error) {
+	if s.IsClosed() {
+		return nil, fmt.Errorf("already closed")
+	}
 	conn, err := s.dialer()
 	if err != nil {
 		s.Close()
@@ -67,6 +86,9 @@ func (s *clientSession) Dial() (net.Conn, error) {
 }
 
 func (s *clientSession) Info() (*SessionInfo, error) {
+	if s.IsClosed() {
+		return nil, fmt.Errorf("already closed")
+	}
 	if s.infoFn == nil {
 		return nil, fmt.Errorf("info func unimplemented")
 	}

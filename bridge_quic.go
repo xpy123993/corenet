@@ -97,6 +97,8 @@ func (p *quicRelayProtocol) InitChannelSession(Channel string, ListenerConn net.
 			defer conn.Close()
 			return getSessionInfo(conn)
 		},
+		closer:         func() error { return packetConn.Connection.CloseWithError(1, "") },
+		isDialerClosed: func() bool { return packetConn.Connection.Context().Err() != nil },
 	}
 	go func() {
 		select {
@@ -124,6 +126,8 @@ func (p *quicRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, err
 			}
 			return &quicConn{Stream: stream, Connection: packetConn.Connection}, nil
 		},
+		closer:         func() error { return packetConn.Connection.CloseWithError(1, "") },
+		isDialerClosed: func() bool { return packetConn.Connection.Context().Err() != nil },
 	}
 	go func() {
 		select {
@@ -180,9 +184,7 @@ type clientQuicSession struct {
 	close    chan struct{}
 }
 
-func (s *clientQuicSession) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *clientQuicSession) unsafeClose() error {
 	if s.isClosed {
 		return nil
 	}
@@ -192,6 +194,12 @@ func (s *clientQuicSession) Close() error {
 	return nil
 }
 
+func (s *clientQuicSession) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.unsafeClose()
+}
+
 func (s *clientQuicSession) IsClosed() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -199,6 +207,7 @@ func (s *clientQuicSession) IsClosed() bool {
 		return true
 	}
 	if s.conn.Context().Err() != nil {
+		s.unsafeClose()
 		s.isClosed = true
 	}
 	return s.isClosed
