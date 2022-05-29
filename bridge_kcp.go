@@ -2,11 +2,9 @@ package corenet
 
 import (
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
-	"sync"
 
 	"github.com/xtaci/kcp-go"
 	"github.com/xtaci/smux"
@@ -79,7 +77,7 @@ func (p *kcpRelayProtocol) InitChannelSession(Channel string, ListenerConn net.C
 	if err != nil {
 		return nil, err
 	}
-	session := &clientSession{
+	return &clientSession{
 		done:     make(chan struct{}),
 		isClosed: false,
 		dialer: func() (net.Conn, error) {
@@ -103,8 +101,7 @@ func (p *kcpRelayProtocol) InitChannelSession(Channel string, ListenerConn net.C
 		},
 		isDialerClosed: connSession.IsClosed,
 		closer:         connSession.Close,
-	}
-	return session, nil
+	}, nil
 }
 
 func (p *kcpRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, error) {
@@ -112,7 +109,7 @@ func (p *kcpRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, erro
 	if err != nil {
 		return nil, err
 	}
-	session := &clientSession{
+	return &clientSession{
 		done:     make(chan struct{}),
 		isClosed: false,
 		dialer: func() (net.Conn, error) {
@@ -124,8 +121,7 @@ func (p *kcpRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, erro
 		},
 		isDialerClosed: connSession.IsClosed,
 		closer:         connSession.Close,
-	}
-	return session, nil
+	}, nil
 }
 
 func newKcpListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, KCPConfig *KCPConfig) (ListenerAdapter, error) {
@@ -133,18 +129,9 @@ func newKcpListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, KCPConfi
 	if err != nil {
 		return nil, err
 	}
-	if err := json.NewEncoder(conn).Encode(RelayRequest{Type: Bind, Payload: Channel}); err != nil {
+	if _, err := doClientHandshake(conn, &RelayRequest{Type: Bind, Payload: Channel}); err != nil {
 		conn.Close()
 		return nil, err
-	}
-	resp := RelayResponse{}
-	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
-		conn.Close()
-		return nil, err
-	}
-	if !resp.Success {
-		conn.Close()
-		return nil, fmt.Errorf("remote error: %v", resp.Payload)
 	}
 	server, err := smux.Server(conn, nil)
 	if err != nil {
@@ -154,79 +141,6 @@ func newKcpListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, KCPConfi
 	return WithListener(&kcpConnListener{server}, []string{fmt.Sprintf("ktf://%s?channel=%s", Addr, Channel)}), nil
 }
 
-type clientKcpSession struct {
-	conn        *smux.Session
-	sessionInfo *SessionInfo
-
-	id       string
-	mu       sync.Mutex
-	isClosed bool
-	close    chan struct{}
-}
-
-func (s *clientKcpSession) unsafeClose() error {
-	if s.isClosed {
-		return nil
-	}
-	s.isClosed = true
-	s.conn.Close()
-	close(s.close)
-	return nil
-}
-
-func (s *clientKcpSession) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.unsafeClose()
-}
-
-func (s *clientKcpSession) IsClosed() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.isClosed {
-		return true
-	}
-	if s.conn.IsClosed() {
-		s.unsafeClose()
-		s.isClosed = true
-	}
-	return s.isClosed
-}
-
-func (s *clientKcpSession) Done() chan struct{} {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.close
-}
-
-func (s *clientKcpSession) OpenConnection() (net.Conn, error) {
-	stream, err := s.conn.OpenStream()
-	if err != nil {
-		s.Close()
-		return nil, err
-	}
-	return createTrackConn(stream, "client_kcp_active_connections"), nil
-}
-
-func (s *clientKcpSession) Info() (*SessionInfo, error) {
-	if s.sessionInfo == nil {
-		return nil, fmt.Errorf("not supported")
-	}
-	return s.sessionInfo, nil
-}
-
-func (s *clientKcpSession) ID() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.id
-}
-
-func (s *clientKcpSession) SetID(v string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.id = v
-}
-
 func getKcpChannelInfo(address, channel string, tlsConfig *tls.Config, KCPConfig *KCPConfig) (*SessionInfo, error) {
 	conn, err := createKCPConnection(address, tlsConfig, KCPConfig)
 	if err != nil {
@@ -234,15 +148,9 @@ func getKcpChannelInfo(address, channel string, tlsConfig *tls.Config, KCPConfig
 	}
 	defer conn.Close()
 
-	if err := json.NewEncoder(conn).Encode(&RelayRequest{Type: Info, Payload: channel}); err != nil {
+	resp, err := doClientHandshake(conn, &RelayRequest{Type: Info, Payload: channel})
+	if err != nil {
 		return nil, err
-	}
-	resp := RelayResponse{}
-	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
-		return nil, err
-	}
-	if !resp.Success {
-		return nil, fmt.Errorf(resp.Payload)
 	}
 	return &resp.SessionInfo, nil
 }
@@ -253,19 +161,9 @@ func newClientKcpBasedSession(address, channel string, tlsConfig *tls.Config, kc
 		return nil, err
 	}
 
-	if err := json.NewEncoder(conn).Encode(&RelayRequest{Type: Dial, Payload: channel}); err != nil {
+	if _, err := doClientHandshake(conn, &RelayRequest{Type: Dial, Payload: channel}); err != nil {
 		conn.Close()
 		return nil, err
-	}
-
-	resp := RelayResponse{}
-	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
-		conn.Close()
-		return nil, err
-	}
-	if !resp.Success {
-		conn.Close()
-		return nil, fmt.Errorf(resp.Payload)
 	}
 
 	connSession, err := smux.Client(conn, nil)
@@ -273,12 +171,29 @@ func newClientKcpBasedSession(address, channel string, tlsConfig *tls.Config, kc
 		conn.Close()
 		return nil, err
 	}
-	session := &clientKcpSession{conn: connSession, close: make(chan struct{}), isClosed: false}
 
 	sessionInfo, err := getKcpChannelInfo(address, channel, tlsConfig, kcpConfig)
 	if err != nil {
 		log.Printf("Failed to obtain session info for %s: %v", channel, err)
+		sessionInfo = nil
 	}
-	session.sessionInfo = sessionInfo
-	return session, nil
+	return &clientSession{
+		isClosed: false,
+		dialer: func() (net.Conn, error) {
+			stream, err := connSession.OpenStream()
+			if err != nil {
+				return nil, err
+			}
+			return createTrackConn(stream, "client_kcp_active_connections"), nil
+		},
+		infoFn: func() (*SessionInfo, error) {
+			if sessionInfo != nil {
+				return sessionInfo, nil
+			}
+			return nil, fmt.Errorf("not supported")
+		},
+		isDialerClosed: connSession.IsClosed,
+		closer:         connSession.Close,
+		done:           make(chan struct{}),
+	}, nil
 }

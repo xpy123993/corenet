@@ -3,11 +3,9 @@ package corenet
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
-	"sync"
 
 	"github.com/lucas-clemente/quic-go"
 )
@@ -158,93 +156,11 @@ func newQuicListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, QuicCon
 	if err != nil {
 		return nil, err
 	}
-	if err := json.NewEncoder(stream).Encode(RelayRequest{Type: Bind, Payload: Channel}); err != nil {
+	if _, err := doClientHandshake(stream, &RelayRequest{Type: Bind, Payload: Channel}); err != nil {
 		conn.CloseWithError(1, err.Error())
 		return nil, err
-	}
-	resp := RelayResponse{}
-	if err := json.NewDecoder(stream).Decode(&resp); err != nil {
-		conn.CloseWithError(1, err.Error())
-		return nil, err
-	}
-	if !resp.Success {
-		conn.CloseWithError(0, "")
-		return nil, fmt.Errorf("remote error: %v", resp.Payload)
 	}
 	return WithListener(&quicConnListener{conn}, []string{fmt.Sprintf("quicf://%s?channel=%s", Addr, Channel)}), nil
-}
-
-type clientQuicSession struct {
-	conn        quic.Connection
-	sessionInfo *SessionInfo
-
-	id       string
-	mu       sync.Mutex
-	isClosed bool
-	close    chan struct{}
-}
-
-func (s *clientQuicSession) unsafeClose() error {
-	if s.isClosed {
-		return nil
-	}
-	s.conn.CloseWithError(0, "")
-	s.isClosed = true
-	close(s.close)
-	return nil
-}
-
-func (s *clientQuicSession) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.unsafeClose()
-}
-
-func (s *clientQuicSession) IsClosed() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.isClosed {
-		return true
-	}
-	if s.conn.Context().Err() != nil {
-		s.unsafeClose()
-		s.isClosed = true
-	}
-	return s.isClosed
-}
-
-func (s *clientQuicSession) Done() chan struct{} {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.close
-}
-
-func (s *clientQuicSession) OpenConnection() (net.Conn, error) {
-	stream, err := s.conn.OpenStream()
-	if err != nil {
-		s.Close()
-		return nil, err
-	}
-	return createTrackConn(&quicConn{Stream: stream, Connection: s.conn}, "client_quic_active_connections"), nil
-}
-
-func (s *clientQuicSession) Info() (*SessionInfo, error) {
-	if s.sessionInfo == nil {
-		return nil, fmt.Errorf("not supported")
-	}
-	return s.sessionInfo, nil
-}
-
-func (s *clientQuicSession) ID() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.id
-}
-
-func (s *clientQuicSession) SetID(v string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.id = v
 }
 
 func getQuicChannelInfo(address, channel string, tlsConfig *tls.Config, quicConfig *quic.Config) (*SessionInfo, error) {
@@ -262,15 +178,9 @@ func getQuicChannelInfo(address, channel string, tlsConfig *tls.Config, quicConf
 	conn := &quicConn{Stream: stream, Connection: packetConn}
 	defer conn.Close()
 
-	if err := json.NewEncoder(conn).Encode(&RelayRequest{Type: Info, Payload: channel}); err != nil {
+	resp, err := doClientHandshake(conn, &RelayRequest{Type: Info, Payload: channel})
+	if err != nil {
 		return nil, err
-	}
-	resp := RelayResponse{}
-	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
-		return nil, err
-	}
-	if !resp.Success {
-		return nil, fmt.Errorf(resp.Payload)
 	}
 	return &resp.SessionInfo, nil
 }
@@ -286,31 +196,33 @@ func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config, q
 		return nil, err
 	}
 
-	if err := json.NewEncoder(stream).Encode(&RelayRequest{Type: Dial, Payload: channel}); err != nil {
+	if _, err := doClientHandshake(stream, &RelayRequest{Type: Dial, Payload: channel}); err != nil {
 		conn.CloseWithError(1, err.Error())
 		return nil, err
 	}
-
-	resp := RelayResponse{}
-	if err := json.NewDecoder(stream).Decode(&resp); err != nil {
-		conn.CloseWithError(1, err.Error())
-		return nil, err
-	}
-	if !resp.Success {
-		conn.CloseWithError(1, resp.Payload)
-		return nil, fmt.Errorf(resp.Payload)
-	}
-
-	session := &clientQuicSession{conn: conn, close: make(chan struct{}), isClosed: false}
-	go func() {
-		<-conn.Context().Done()
-		session.Close()
-	}()
 
 	sessionInfo, err := getQuicChannelInfo(address, channel, tlsConfig, quicConfig)
 	if err != nil {
 		log.Printf("Failed to obtain session info for %s: %v", channel, err)
+		sessionInfo = nil
 	}
-	session.sessionInfo = sessionInfo
-	return session, nil
+	return &clientSession{
+		done:     make(chan struct{}),
+		isClosed: false,
+		dialer: func() (net.Conn, error) {
+			stream, err := conn.OpenStream()
+			if err != nil {
+				return nil, err
+			}
+			return createTrackConn(&quicConn{Stream: stream, Connection: conn}, "client_quic_active_connections"), nil
+		},
+		infoFn: func() (*SessionInfo, error) {
+			if sessionInfo == nil {
+				return nil, fmt.Errorf("not supported")
+			}
+			return sessionInfo, nil
+		},
+		closer:         func() error { return conn.CloseWithError(1, "") },
+		isDialerClosed: func() bool { return conn.Context().Err() != nil },
+	}, nil
 }

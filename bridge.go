@@ -226,7 +226,6 @@ func (s *RelayServer) serveConnection(conn net.Conn, protocol RelayProtocol) {
 	if s.logError && result != nil {
 		log.Printf("Connection closed with error: %v", result)
 	}
-
 }
 
 // Serve starts the relay service on the specified listener.
@@ -238,4 +237,15 @@ func (s *RelayServer) Serve(listener net.Listener, protocol RelayProtocol) error
 		}
 		go s.serveConnection(conn, protocol)
 	}
+}
+
+func doClientHandshake(conn io.ReadWriter, req *RelayRequest) (*RelayResponse, error) {
+	if err := json.NewEncoder(conn).Encode(req); err != nil {
+		return nil, err
+	}
+	resp := RelayResponse{}
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		return nil, fmt.Errorf("remote error: %v", err)
+	}
+	return &resp, nil
 }

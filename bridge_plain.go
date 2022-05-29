@@ -57,21 +57,9 @@ func (s *clientListenerSession) OpenConnection() (net.Conn, error) {
 		s.Close()
 		return nil, err
 	}
-	if err := json.NewEncoder(conn).Encode(&RelayRequest{Type: Dial, Payload: s.channel}); err != nil {
+	if _, err := doClientHandshake(conn, &RelayRequest{Type: Dial, Payload: s.channel}); err != nil {
 		conn.Close()
-		s.Close()
 		return nil, err
-	}
-
-	resp := RelayResponse{}
-	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
-		conn.Close()
-		s.Close()
-		return nil, err
-	}
-	if !resp.Success {
-		conn.Close()
-		return nil, fmt.Errorf(resp.Payload)
 	}
 	return createTrackConn(conn, "client_plain_active_connections"), nil
 }
@@ -83,17 +71,9 @@ func (s *clientListenerSession) Info() (*SessionInfo, error) {
 		return nil, err
 	}
 	defer conn.Close()
-	if err := json.NewEncoder(conn).Encode(&RelayRequest{Type: Info, Payload: s.channel}); err != nil {
-		s.Close()
+	resp, err := doClientHandshake(conn, &RelayRequest{Type: Info, Payload: s.channel})
+	if err != nil {
 		return nil, err
-	}
-	resp := RelayResponse{}
-	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
-		s.Close()
-		return nil, err
-	}
-	if !resp.Success {
-		return nil, fmt.Errorf(resp.Payload)
 	}
 	return &resp.SessionInfo, nil
 }
@@ -109,14 +89,9 @@ func newClientListenerBasedSession(channel string, underlyingDialer func() (net.
 	if err != nil {
 		return nil, err
 	}
-	if err := json.NewEncoder(probeConn).Encode(&RelayRequest{Type: Nop, Payload: channel}); err != nil {
-		probeConn.Close()
-		return nil, err
-	}
-
 	session := clientListenerSession{conn: probeConn, underlyingDialer: underlyingDialer, channel: channel, close: make(chan struct{})}
 	go func() {
-		probeConn.Read(make([]byte, 1))
+		doClientHandshake(probeConn, &RelayRequest{Type: Nop, Payload: channel})
 		session.Close()
 	}()
 	return &session, nil
@@ -127,18 +102,9 @@ func newClientListenerAdapter(address, channel string, underlyingDialer func() (
 	if err != nil {
 		return nil, err
 	}
-	if err := json.NewEncoder(controlConn).Encode(RelayRequest{Type: Bind, Payload: channel}); err != nil {
+	if _, err := doClientHandshake(controlConn, &RelayRequest{Type: Bind, Payload: channel}); err != nil {
 		controlConn.Close()
 		return nil, err
-	}
-	resp := RelayResponse{}
-	if err := json.NewDecoder(controlConn).Decode(&resp); err != nil {
-		controlConn.Close()
-		return nil, err
-	}
-	if !resp.Success {
-		controlConn.Close()
-		return nil, fmt.Errorf("remote error: %v", resp.Payload)
 	}
 	return WithListenerReverseConn(controlConn, func() (net.Conn, error) {
 		conn, err := underlyingDialer()
