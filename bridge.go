@@ -153,13 +153,13 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 	defer cancelFn()
 
 	for {
-		conn, err := clientSession.Dial()
+		conn, err := clientSession.OpenConnection()
 		if err != nil {
 			return err
 		}
 		go func(conn net.Conn) {
 			defer conn.Close()
-			channelConn, err := channelSession.Dial()
+			channelConn, err := channelSession.OpenConnection()
 			if err != nil {
 				return
 			}

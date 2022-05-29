@@ -51,7 +51,7 @@ func (s *clientListenerSession) SetID(v string) {
 	s.id = v
 }
 
-func (s *clientListenerSession) Dial() (net.Conn, error) {
+func (s *clientListenerSession) OpenConnection() (net.Conn, error) {
 	conn, err := s.underlyingDialer()
 	if err != nil {
 		s.Close()

@@ -199,7 +199,7 @@ func (s *clientKcpSession) Done() chan struct{} {
 	return s.close
 }
 
-func (s *clientKcpSession) Dial() (net.Conn, error) {
+func (s *clientKcpSession) OpenConnection() (net.Conn, error) {
 	stream, err := s.conn.OpenStream()
 	if err != nil {
 		s.Close()

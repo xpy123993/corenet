@@ -219,7 +219,7 @@ func (s *clientQuicSession) Done() chan struct{} {
 	return s.close
 }
 
-func (s *clientQuicSession) Dial() (net.Conn, error) {
+func (s *clientQuicSession) OpenConnection() (net.Conn, error) {
 	stream, err := s.conn.OpenStream()
 	if err != nil {
 		s.Close()

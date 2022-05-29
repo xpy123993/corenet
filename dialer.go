@@ -30,7 +30,7 @@ type Session interface {
 	IsClosed() bool
 	Done() chan struct{}
 
-	Dial() (net.Conn, error)
+	OpenConnection() (net.Conn, error)
 	Info() (*SessionInfo, error)
 
 	ID() string
@@ -74,7 +74,7 @@ func (s *clientSession) IsClosed() bool {
 	return s.isClosed
 }
 
-func (s *clientSession) Dial() (net.Conn, error) {
+func (s *clientSession) OpenConnection() (net.Conn, error) {
 	if s.IsClosed() {
 		return nil, fmt.Errorf("already closed")
 	}
@@ -153,7 +153,7 @@ func (s *clientTCPSession) SetID(v string) {
 	s.id = v
 }
 
-func (s *clientTCPSession) Dial() (net.Conn, error) {
+func (s *clientTCPSession) OpenConnection() (net.Conn, error) {
 	conn, err := net.DialTimeout("tcp", s.address, 3*time.Second)
 	if err != nil {
 		s.Close()
@@ -373,7 +373,7 @@ func (d *Dialer) Dial(Channel string) (net.Conn, error) {
 	session, exists := d.channelSessions[Channel]
 	d.mu.RUnlock()
 	if exists && !session.IsClosed() {
-		return session.Dial()
+		return session.OpenConnection()
 	}
 	if session == nil {
 		d.tryUpdateSession(Channel)
@@ -382,7 +382,7 @@ func (d *Dialer) Dial(Channel string) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return session.Dial()
+	return session.OpenConnection()
 }
 
 // GetSessionID returns the session information of the channel.
