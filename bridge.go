@@ -2,6 +2,7 @@ package corenet
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,12 +11,19 @@ import (
 	"sync"
 )
 
+// RelayPeerContext stores the peer identification.
+type RelayPeerContext struct {
+	Name string
+}
+
 // RelayProtocol specifies the relay protocol.
 type RelayProtocol interface {
 	// InitClientSession converts a client connection to a session.
 	InitClientSession(ClientConn net.Conn) (Session, error)
 	// InitChannelSession converts a listener connection to a session.
 	InitChannelSession(Channel string, ListenerConn net.Conn) (Session, error)
+	// ExtractIdentity extracts the identity from the connection.
+	ExtractIdentity(Conn net.Conn) (*RelayPeerContext, error)
 	// ServeChannel is the channel where the relay server will redirect serve requests.
 	// Optional, can return nil.
 	ServeChannel() chan serveContext
@@ -132,6 +140,11 @@ func (s *RelayServer) serveBind(conn net.Conn, channel string, protocol RelayPro
 }
 
 func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol RelayProtocol) error {
+	peerContext, err := protocol.ExtractIdentity(conn)
+	if err != nil {
+		json.NewEncoder(conn).Encode(RelayResponse{Success: false, Payload: "verification failed"})
+		return err
+	}
 	channelSession := s.lookupChannel(req.Payload)
 	if channelSession == nil {
 		json.NewEncoder(conn).Encode(RelayResponse{Success: false, Payload: fmt.Sprintf("channel `%s` not exists", req.Payload)})
@@ -146,8 +159,8 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 	}
 	defer clientSession.Close()
 
-	globalStatsCounterMap.Inc("relay_active_dialer")
-	defer globalStatsCounterMap.Dec("relay_active_dialer")
+	globalStatsCounterMap.Inc("relay_active_dialer_" + peerContext.Name)
+	defer globalStatsCounterMap.Dec("relay_active_dialer_" + peerContext.Name)
 
 	clientContext, cancelFn := context.WithCancel(context.Background())
 	defer cancelFn()
@@ -248,4 +261,14 @@ func doClientHandshake(conn io.ReadWriter, req *RelayRequest) (*RelayResponse, e
 		return nil, fmt.Errorf("remote error: %v", err)
 	}
 	return &resp, nil
+}
+
+func extractIdentityFromTLSConn(conn net.Conn) (*RelayPeerContext, error) {
+	if tlsConn, ok := conn.(*tls.Conn); ok {
+		if len(tlsConn.ConnectionState().PeerCertificates) > 0 {
+			return &RelayPeerContext{Name: tlsConn.ConnectionState().PeerCertificates[0].Subject.CommonName}, nil
+		}
+		return nil, fmt.Errorf("no certificate found from the tls connection")
+	}
+	return nil, fmt.Errorf("not supported")
 }

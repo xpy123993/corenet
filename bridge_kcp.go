@@ -72,6 +72,10 @@ type kcpRelayProtocol struct {
 
 func (p *kcpRelayProtocol) ServeChannel() chan serveContext { return nil }
 
+func (p *kcpRelayProtocol) ExtractIdentity(Conn net.Conn) (*RelayPeerContext, error) {
+	return extractIdentityFromTLSConn(Conn)
+}
+
 func (p *kcpRelayProtocol) InitChannelSession(Channel string, ListenerConn net.Conn) (Session, error) {
 	connSession, err := smux.Client(ListenerConn, nil)
 	if err != nil {

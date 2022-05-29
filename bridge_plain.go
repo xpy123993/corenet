@@ -227,6 +227,9 @@ func (p *listenerBasedRelayProtocol) serveListener() {
 }
 
 func (p *listenerBasedRelayProtocol) ServeChannel() chan serveContext { return p.serveChan }
+func (p *listenerBasedRelayProtocol) ExtractIdentity(Conn net.Conn) (*RelayPeerContext, error) {
+	return extractIdentityFromTLSConn(Conn)
+}
 
 // UsePlainRelayProtocol provides a relay protocol for the relay server.
 func UsePlainRelayProtocol() RelayProtocol {

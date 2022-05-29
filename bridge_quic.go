@@ -122,6 +122,17 @@ func (p *quicRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, err
 	return session, nil
 }
 
+func (p *quicRelayProtocol) ExtractIdentity(Conn net.Conn) (*RelayPeerContext, error) {
+	packetConn, ok := Conn.(*quicConn)
+	if !ok {
+		return nil, fmt.Errorf("expect session connection to be quicConn")
+	}
+	if len(packetConn.Connection.ConnectionState().TLS.PeerCertificates) > 0 {
+		return &RelayPeerContext{Name: packetConn.Connection.ConnectionState().TLS.PeerCertificates[0].Subject.CommonName}, nil
+	}
+	return nil, fmt.Errorf("no certificate found")
+}
+
 // CreateRelayQuicListener returns the listener that can be used for relay server serving.
 func CreateRelayQuicListener(Addr string, TLSConfig *tls.Config, QuicConfig *quic.Config) (net.Listener, error) {
 	lis, err := quic.ListenAddr(Addr, TLSConfig, QuicConfig)
