@@ -119,6 +119,10 @@ func newClientListenerBasedSession(channel string, underlyingDialer func() (net.
 		probeConn.Read(make([]byte, 1))
 		session.Close()
 	}()
+	go func() {
+		<-session.Done()
+		probeConn.Close()
+	}()
 	return &session, nil
 }
 
