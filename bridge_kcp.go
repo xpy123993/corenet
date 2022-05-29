@@ -163,8 +163,8 @@ func (s *clientKcpSession) Close() error {
 	if s.isClosed {
 		return nil
 	}
-	s.conn.Close()
 	s.isClosed = true
+	s.conn.Close()
 	close(s.close)
 	return nil
 }

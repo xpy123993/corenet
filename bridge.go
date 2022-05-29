@@ -149,6 +149,9 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 	}
 	defer clientSession.Close()
 
+	clientContext, cancelFn := context.WithCancel(context.Background())
+	defer cancelFn()
+
 	for {
 		conn, err := clientSession.Dial()
 		if err != nil {
@@ -165,7 +168,7 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 			globalStatsCounterMap.Inc("relay_active_connection")
 			defer globalStatsCounterMap.Dec("relay_active_connection")
 
-			ctx, cancelFn := context.WithCancel(context.Background())
+			ctx, cancelFn := context.WithCancel(clientContext)
 			go func() { io.Copy(channelConn, conn); cancelFn() }()
 			go func() { io.Copy(conn, channelConn); cancelFn() }()
 			<-ctx.Done()
@@ -191,9 +194,6 @@ func (s *RelayServer) serveInfo(conn net.Conn, channel string) error {
 }
 
 func (s *RelayServer) serveConnection(conn net.Conn, protocol RelayProtocol) {
-	globalStatsCounterMap.Inc("relay_active_connection")
-	defer globalStatsCounterMap.Dec("relay_active_connection")
-
 	closeConnectionAfterExit := true
 	defer func() {
 		if closeConnectionAfterExit {
@@ -204,6 +204,9 @@ func (s *RelayServer) serveConnection(conn net.Conn, protocol RelayProtocol) {
 	if err := json.NewDecoder(conn).Decode(&req); err != nil {
 		return
 	}
+	globalStatsCounterMap.Inc(fmt.Sprintf("relay_%s", GetCommandName(req.Type)))
+	defer globalStatsCounterMap.Dec(fmt.Sprintf("relay_%s", GetCommandName(req.Type)))
+
 	var result error
 	switch req.Type {
 	case Bind:
