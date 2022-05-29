@@ -111,83 +111,6 @@ func (s *clientSession) SetID(v string) {
 	s.addr = v
 }
 
-type clientTCPSession struct {
-	conn    net.Conn
-	address string
-
-	id       string
-	mu       sync.Mutex
-	isClosed bool
-	close    chan struct{}
-}
-
-func (s *clientTCPSession) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.isClosed {
-		return nil
-	}
-	s.isClosed = true
-	close(s.close)
-	if s.conn != nil {
-		return s.conn.Close()
-	}
-	return nil
-}
-
-func (s *clientTCPSession) IsClosed() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.isClosed
-}
-
-func (s *clientTCPSession) ID() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.id
-}
-
-func (s *clientTCPSession) SetID(v string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.id = v
-}
-
-func (s *clientTCPSession) OpenConnection() (net.Conn, error) {
-	conn, err := net.DialTimeout("tcp", s.address, 3*time.Second)
-	if err != nil {
-		s.Close()
-		return nil, err
-	}
-	if _, err := conn.Write([]byte{Dial}); err != nil {
-		s.Close()
-		conn.Close()
-		return nil, err
-	}
-	return createTrackConn(conn, "client_direct_tcp_active_connections"), nil
-}
-
-func (s *clientTCPSession) Info() (*SessionInfo, error) {
-	conn, err := net.DialTimeout("tcp", s.address, 3*time.Second)
-	if err != nil {
-		s.Close()
-		return nil, err
-	}
-	defer conn.Close()
-	sessionInfo, err := getSessionInfo(conn)
-	if err != nil {
-		s.Close()
-		return nil, err
-	}
-	return sessionInfo, nil
-}
-
-func (s *clientTCPSession) Done() chan struct{} {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.close
-}
-
 func newClientTCPSession(address string) (Session, error) {
 	conn, err := net.DialTimeout("tcp", address, 3*time.Second)
 	if err != nil {
@@ -200,7 +123,34 @@ func newClientTCPSession(address string) (Session, error) {
 		}
 		return nil, fmt.Errorf("cannot finish handshake")
 	}
-	session := clientTCPSession{conn: conn, address: address, id: fmt.Sprintf("tcp://%s", address), close: make(chan struct{}), isClosed: false}
+	session := clientSession{
+		dialer: func() (net.Conn, error) {
+			conn, err := net.DialTimeout("tcp", address, 3*time.Second)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := conn.Write([]byte{Dial}); err != nil {
+				conn.Close()
+				return nil, err
+			}
+			return createTrackConn(conn, "client_direct_tcp_active_connections"), nil
+		},
+		infoFn: func() (*SessionInfo, error) {
+			conn, err := net.DialTimeout("tcp", address, 3*time.Second)
+			if err != nil {
+				return nil, err
+			}
+			defer conn.Close()
+			sessionInfo, err := getSessionInfo(conn)
+			if err != nil {
+				return nil, err
+			}
+			return sessionInfo, nil
+		},
+		closer:   conn.Close,
+		isClosed: false,
+		done:     make(chan struct{}),
+	}
 	go func() {
 		conn.Read(make([]byte, 1))
 		session.Close()
@@ -216,6 +166,7 @@ type Dialer struct {
 	tlsConfig             *tls.Config
 	quicConfig            *quic.Config
 	kcpConfig             *KCPConfig
+	logError              bool
 
 	mu               sync.RWMutex
 	isClosed         bool
@@ -271,7 +222,6 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 		if kcpConfig == nil {
 			kcpConfig = DefaultKCPConfig()
 		}
-
 		TLSConfig.ServerName = uri.Hostname()
 		return newClientKcpBasedSession(uri.Host, channel, &TLSConfig, kcpConfig)
 	case "quicf":
@@ -299,6 +249,9 @@ func (d *Dialer) establishChannel(Channel string, addresses []string, curSession
 		if err == nil {
 			session.SetID(addressURI.Hostname())
 			return session, nil
+		}
+		if d.logError {
+			log.Printf("Try dial to `%s` using address `%s`: %v", Channel, address, err)
 		}
 	}
 	return nil, fmt.Errorf("%s is unavailable", Channel)

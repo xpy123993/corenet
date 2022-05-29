@@ -108,7 +108,9 @@ func main() {
 			log.Printf("Relay server returns error: %v", err)
 		}
 	case "server":
-		relayAdapter, err := corenet.CreateListenerFallbackURLAdapter(*relayServerURL, *channel, &tls.Config{InsecureSkipVerify: true})
+		relayAdapter, err := corenet.CreateListenerFallbackURLAdapter(*relayServerURL, *channel, &corenet.ListenerFallbackOptions{TLSConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		}})
 		if err != nil {
 			log.Fatal(err)
 		}

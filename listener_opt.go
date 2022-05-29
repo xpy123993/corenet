@@ -68,8 +68,24 @@ func WithListenerReverseConn(conn net.Conn, dialer func() (net.Conn, error), add
 	}
 }
 
+// ListenerFallbackOptions specifies the option needed for creating a fallback adapter.
+type ListenerFallbackOptions struct {
+	TLSConfig  *tls.Config
+	KCPConfig  *KCPConfig
+	QuicConfig *quic.Config
+}
+
+// CreateDefaultFallbackOptions returns a option with default value populated.
+func CreateDefaultFallbackOptions() *ListenerFallbackOptions {
+	return &ListenerFallbackOptions{
+		TLSConfig:  nil,
+		KCPConfig:  DefaultKCPConfig(),
+		QuicConfig: &quic.Config{KeepAlive: true},
+	}
+}
+
 // CreateListenerFallbackURLAdapter returns a listener adapter that listens on the specified relay server.
-func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, TLSConfig *tls.Config) (ListenerAdapter, error) {
+func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, Options *ListenerFallbackOptions) (ListenerAdapter, error) {
 	uri, err := url.Parse(RelayServerURL)
 	if err != nil {
 		return nil, err
@@ -81,28 +97,28 @@ func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, TLS
 	case "ttf":
 		// tcp+tls+fallback
 		return newClientListenerAdapter(uri.Host, Channel, func() (net.Conn, error) {
-			return tls.Dial("tcp", uri.Host, TLSConfig)
+			return tls.Dial("tcp", uri.Host, Options.TLSConfig)
 		})
 	case "ktf":
 		// kcp+tls+fallback
 		var tlsConfig tls.Config
-		if TLSConfig != nil {
-			tlsConfig = *TLSConfig
+		if Options.TLSConfig != nil {
+			tlsConfig = *Options.TLSConfig
 		}
 		tlsConfig.ServerName = uri.Hostname()
-		kcpConfig := DefaultKCPConfig()
+		kcpConfig := Options.KCPConfig
+		if kcpConfig == nil {
+			kcpConfig = DefaultKCPConfig()
+		}
 		return newKcpListenerAdapter(uri.Host, Channel, &tlsConfig, kcpConfig)
 	case "quicf":
 		// quic+fallback
 		var tlsConfig tls.Config
-		if TLSConfig != nil {
-			tlsConfig = *TLSConfig
+		if Options.TLSConfig != nil {
+			tlsConfig = *Options.TLSConfig
 		}
-		tlsConfig.NextProtos = append(TLSConfig.NextProtos, "quicf")
-		return newQuicListenerAdapter(uri.Host, Channel, &tlsConfig, &quic.Config{
-			KeepAlive:               true,
-			DisablePathMTUDiscovery: true,
-		})
+		tlsConfig.NextProtos = append(Options.TLSConfig.NextProtos, "quicf")
+		return newQuicListenerAdapter(uri.Host, Channel, &tlsConfig, Options.QuicConfig)
 	default:
 		return nil, fmt.Errorf("unknown protocol: %s", uri.Scheme)
 	}

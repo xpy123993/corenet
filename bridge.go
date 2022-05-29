@@ -132,9 +132,6 @@ func (s *RelayServer) serveBind(conn net.Conn, channel string, protocol RelayPro
 }
 
 func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol RelayProtocol) error {
-	globalStatsCounterMap.Inc("relay_active_dialer")
-	defer globalStatsCounterMap.Dec("relay_active_dialer")
-
 	channelSession := s.lookupChannel(req.Payload)
 	if channelSession == nil {
 		json.NewEncoder(conn).Encode(RelayResponse{Success: false, Payload: fmt.Sprintf("channel `%s` not exists", req.Payload)})
@@ -148,6 +145,9 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 		return err
 	}
 	defer clientSession.Close()
+
+	globalStatsCounterMap.Inc("relay_active_dialer")
+	defer globalStatsCounterMap.Dec("relay_active_dialer")
 
 	clientContext, cancelFn := context.WithCancel(context.Background())
 	defer cancelFn()

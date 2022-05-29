@@ -72,3 +72,11 @@ func WithDialerKCPConfig(config *KCPConfig) DialerOption {
 		},
 	}
 }
+
+func WithDialerLogError(v bool) DialerOption {
+	return &dialerOptionApplier{
+		applyFn: func(d *Dialer) {
+			d.logError = v
+		},
+	}
+}

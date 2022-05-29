@@ -111,9 +111,9 @@ func TestRawDialer(t *testing.T) {
 }
 
 func listenerDialerRoutine(t *testing.T, relayServerAddr, expectSessionID string) {
-	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(relayServerAddr, "test-channel", &tls.Config{
+	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(relayServerAddr, "test-channel", &corenet.ListenerFallbackOptions{TLSConfig: &tls.Config{
 		InsecureSkipVerify: true,
-	})
+	}})
 	if err != nil {
 		t.Error(err)
 		return
@@ -221,9 +221,9 @@ func TestDialerListenerDifferentProtocol(t *testing.T) {
 
 	time.Sleep(10 * time.Millisecond)
 
-	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(fmt.Sprintf("quicf://%s", relayListener.Addr().String()), "test-channel", &tls.Config{
-		InsecureSkipVerify: true, NextProtos: []string{"quicf"},
-	})
+	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(fmt.Sprintf("quicf://%s", relayListener.Addr().String()), "test-channel", &corenet.ListenerFallbackOptions{TLSConfig: &tls.Config{
+		InsecureSkipVerify: true,
+	}})
 	if err != nil {
 		t.Error(err)
 	}
@@ -273,9 +273,9 @@ func TestDialerUpgradeSession(t *testing.T) {
 	time.Sleep(3 * time.Millisecond)
 	relayServerAddr := fmt.Sprintf("quicf://%s", relayListener.Addr().String())
 
-	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(relayServerAddr, "test-channel", &tls.Config{
-		InsecureSkipVerify: true, NextProtos: []string{"quicf"},
-	})
+	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(relayServerAddr, "test-channel", &corenet.ListenerFallbackOptions{TLSConfig: &tls.Config{
+		InsecureSkipVerify: true,
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
