@@ -150,8 +150,8 @@ func (l *multiListener) serveIncomingConn(conn net.Conn) {
 }
 
 func (l *multiListener) serveListener(raw net.Listener) {
-	globalStatsCounterMap.Inc("listener_active_listener")
-	defer globalStatsCounterMap.Dec("listener_active_listener")
+	globalStatsCounterMap.Inc("corenet_listener_active_listeners")
+	defer globalStatsCounterMap.Dec("corenet_listener_active_listeners")
 
 	defer l.Close()
 	for {
@@ -168,7 +168,7 @@ func (l *multiListener) Accept() (net.Conn, error) {
 	case <-l.done:
 	case conn, ok := <-l.connChan:
 		if ok {
-			return createTrackConn(conn, "listener_active_connections"), nil
+			return createTrackConn(conn, "corenet_listener_active_connections"), nil
 		}
 	}
 	return nil, io.EOF

@@ -133,7 +133,7 @@ func newClientTCPSession(address string) (Session, error) {
 				conn.Close()
 				return nil, err
 			}
-			return createTrackConn(conn, "client_direct_tcp_active_connections"), nil
+			return createTrackConn(conn, "corenet_client_direct_tcp_active_connections"), nil
 		},
 		infoFn: func() (*SessionInfo, error) {
 			conn, err := net.DialTimeout("tcp", address, 3*time.Second)
@@ -282,7 +282,7 @@ func (d *Dialer) tryUpdateSession(Channel string) (Session, error) {
 	defer d.mu.Unlock()
 
 	originalSession, exist := d.channelSessions[Channel]
-	if !exist || originalSession.ID() != session.ID() {
+	if !exist || originalSession.IsClosed() || originalSession.ID() != session.ID() {
 		if originalSession != nil {
 			originalSession.Close()
 			log.Printf("Upgrade connection to `%s`: `%s` -> `%s`", Channel, originalSession.ID(), session.ID())

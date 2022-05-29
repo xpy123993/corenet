@@ -209,7 +209,7 @@ func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config, q
 			if err != nil {
 				return nil, err
 			}
-			return createTrackConn(&quicConn{Stream: stream, Connection: conn}, "client_quic_active_connections"), nil
+			return createTrackConn(&quicConn{Stream: stream, Connection: conn}, "corenet_client_quic_active_connections"), nil
 		},
 		infoFn: func() (*SessionInfo, error) {
 			if sessionInfo == nil {

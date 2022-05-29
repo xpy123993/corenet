@@ -188,7 +188,7 @@ func newClientKcpBasedSession(address, channel string, tlsConfig *tls.Config, kc
 			if err != nil {
 				return nil, err
 			}
-			return createTrackConn(stream, "client_kcp_active_connections"), nil
+			return createTrackConn(stream, "corenet_client_kcp_active_connections"), nil
 		},
 		infoFn: func() (*SessionInfo, error) {
 			if sessionInfo != nil {

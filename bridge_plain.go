@@ -61,7 +61,7 @@ func (s *clientListenerSession) OpenConnection() (net.Conn, error) {
 		conn.Close()
 		return nil, err
 	}
-	return createTrackConn(conn, "client_plain_active_connections"), nil
+	return createTrackConn(conn, "corenet_client_plain_active_connections"), nil
 }
 
 func (s *clientListenerSession) Info() (*SessionInfo, error) {

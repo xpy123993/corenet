@@ -112,7 +112,7 @@ var (
 )
 
 func init() {
-	http.HandleFunc("/debug/clover3", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/debug/corenet", func(w http.ResponseWriter, r *http.Request) {
 		statsSnapshot := globalStatsCounterMap.Stats()
 		entries := make([]string, 0, len(statsSnapshot))
 		for entryName := range statsSnapshot {
@@ -120,7 +120,7 @@ func init() {
 		}
 		sort.Strings(entries)
 		for _, entry := range entries {
-			fmt.Fprintf(w, "%s = %d\n", entry, statsSnapshot[entry])
+			fmt.Fprintf(w, "%s %d\n", entry, statsSnapshot[entry])
 		}
 	})
 }

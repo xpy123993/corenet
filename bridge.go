@@ -126,9 +126,6 @@ func (s *RelayServer) serveBind(conn net.Conn, channel string, protocol RelayPro
 		return err
 	}
 
-	globalStatsCounterMap.Inc("relay_active_channel")
-	defer globalStatsCounterMap.Dec("relay_active_channel")
-
 	<-session.Done()
 
 	s.mu.Lock()
@@ -137,6 +134,23 @@ func (s *RelayServer) serveBind(conn net.Conn, channel string, protocol RelayPro
 		delete(s.routeTable, channel)
 	}
 	return nil
+}
+
+type countReader struct {
+	io.Reader
+	callback func(int64)
+}
+
+func (r *countReader) Read(buf []byte) (int, error) {
+	n, err := r.Reader.Read(buf)
+	if err == nil {
+		r.callback(int64(n))
+	}
+	return n, err
+}
+
+func countCopy(reader io.Reader, writer io.Writer, callback func(int64)) (int64, error) {
+	return io.Copy(writer, &countReader{Reader: reader, callback: callback})
 }
 
 func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol RelayProtocol) error {
@@ -159,10 +173,6 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 	}
 	defer clientSession.Close()
 
-	trackLabel := fmt.Sprintf("relay-active-connection-{%s}->{%s}", peerContext.Name, req.Payload)
-	globalStatsCounterMap.Inc(trackLabel)
-	defer globalStatsCounterMap.Dec(trackLabel)
-
 	clientContext, cancelFn := context.WithCancel(context.Background())
 	defer cancelFn()
 
@@ -179,12 +189,25 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 			}
 			defer channelConn.Close()
 
-			globalStatsCounterMap.Inc("relay_active_connection")
-			defer globalStatsCounterMap.Dec("relay_active_connection")
+			trackLabel := fmt.Sprintf("corenet_relay_active_serving_connections{client=\"%s\", channel=\"%s\"}", peerContext.Name, req.Payload)
+			globalStatsCounterMap.Inc(trackLabel)
+			defer globalStatsCounterMap.Dec(trackLabel)
 
 			ctx, cancelFn := context.WithCancel(clientContext)
-			go func() { io.Copy(channelConn, conn); cancelFn() }()
-			go func() { io.Copy(conn, channelConn); cancelFn() }()
+			go func() {
+				entry := globalStatsCounterMap.getEntry(fmt.Sprintf("corenet_relay_transfer_bytes{source=\"%s\", target=\"%s\"}", peerContext.Name, req.Payload))
+				countCopy(channelConn, conn, func(i int64) {
+					entry.Delta(i)
+				})
+				cancelFn()
+			}()
+			go func() {
+				entry := globalStatsCounterMap.getEntry(fmt.Sprintf("corenet_relay_transfer_bytes{source=\"%s\", target=\"%s\"}", req.Payload, peerContext.Name))
+				countCopy(conn, channelConn, func(i int64) {
+					entry.Delta(i)
+				})
+				cancelFn()
+			}()
 			<-ctx.Done()
 		}(conn)
 	}
@@ -218,8 +241,9 @@ func (s *RelayServer) serveConnection(conn net.Conn, protocol RelayProtocol) {
 	if err := json.NewDecoder(conn).Decode(&req); err != nil {
 		return
 	}
-	globalStatsCounterMap.Inc(fmt.Sprintf("relay_%s", GetCommandName(req.Type)))
-	defer globalStatsCounterMap.Dec(fmt.Sprintf("relay_%s", GetCommandName(req.Type)))
+	trackLabel := fmt.Sprintf("corenet_relay_active_raw_connections{method=\"%s\"}", GetCommandName(req.Type))
+	globalStatsCounterMap.Inc(trackLabel)
+	defer globalStatsCounterMap.Dec(trackLabel)
 
 	var result error
 	switch req.Type {
