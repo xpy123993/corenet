@@ -147,6 +147,8 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 	if err != nil {
 		return err
 	}
+	defer clientSession.Close()
+
 	wg := sync.WaitGroup{}
 	for !clientSession.IsClosed() {
 		conn, err := clientSession.Dial()

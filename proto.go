@@ -53,6 +53,33 @@ type RelayResponse struct {
 	SessionInfo SessionInfo `json:"session-info"`
 }
 
+// KCPConfig specifies kcp parameters.
+type KCPConfig struct {
+	MTU          int `default:"1350"`
+	SndWnd       int `default:"2048"`
+	RcvWnd       int `default:"2048"`
+	DataShard    int `default:"10"`
+	ParityShard  int `default:"3"`
+	NoDelay      int `default:"1"`
+	Interval     int `default:"10"`
+	Resend       int `default:"2"`
+	NoCongestion int `default:"1"`
+}
+
+func DefaultKCPConfig() *KCPConfig {
+	return &KCPConfig{
+		MTU:          1350,
+		SndWnd:       2048,
+		RcvWnd:       2048,
+		DataShard:    10,
+		ParityShard:  3,
+		NoDelay:      1,
+		Interval:     10,
+		Resend:       2,
+		NoCongestion: 1,
+	}
+}
+
 func getSessionInfo(conn io.ReadWriter) (*SessionInfo, error) {
 	if _, err := conn.Write([]byte{Info}); err != nil {
 		return nil, err

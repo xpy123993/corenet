@@ -63,3 +63,12 @@ func WithDialerQuicConfig(config *quic.Config) DialerOption {
 		},
 	}
 }
+
+// WithDialerKCPConfig specifies the kcp config being used for ktf protocol.
+func WithDialerKCPConfig(config *KCPConfig) DialerOption {
+	return &dialerOptionApplier{
+		applyFn: func(d *Dialer) {
+			d.kcpConfig = config
+		},
+	}
+}

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/lucas-clemente/quic-go"
-	"github.com/xtaci/kcp-go"
 )
 
 type clientSession struct {
@@ -195,6 +194,7 @@ type Dialer struct {
 	updateChannelInterval time.Duration
 	tlsConfig             *tls.Config
 	quicConfig            *quic.Config
+	kcpConfig             *KCPConfig
 
 	mu               sync.RWMutex
 	isClosed         bool
@@ -245,14 +245,13 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 		if d.tlsConfig != nil {
 			TLSConfig = *d.tlsConfig
 		}
+		kcpConfig := d.kcpConfig
+		if kcpConfig == nil {
+			kcpConfig = DefaultKCPConfig()
+		}
+
 		TLSConfig.ServerName = uri.Hostname()
-		return newClientListenerBasedSession(channel, func() (net.Conn, error) {
-			conn, err := kcp.Dial(uri.Host)
-			if err != nil {
-				return nil, err
-			}
-			return tls.Client(conn, &TLSConfig), nil
-		})
+		return newClientKcpBasedSession(uri.Host, channel, &TLSConfig, kcpConfig)
 	case "quicf":
 		var TLSConfig tls.Config
 		if d.tlsConfig != nil {

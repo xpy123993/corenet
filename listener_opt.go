@@ -7,7 +7,6 @@ import (
 	"net/url"
 
 	"github.com/lucas-clemente/quic-go"
-	"github.com/xtaci/kcp-go"
 )
 
 type listenerAdapterApplier struct {
@@ -91,13 +90,8 @@ func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, TLS
 			tlsConfig = *TLSConfig
 		}
 		tlsConfig.ServerName = uri.Hostname()
-		return newClientListenerAdapter(uri.Host, Channel, func() (net.Conn, error) {
-			conn, err := kcp.Dial(uri.Host)
-			if err != nil {
-				return nil, err
-			}
-			return tls.Client(conn, &tlsConfig), nil
-		})
+		kcpConfig := DefaultKCPConfig()
+		return newKcpListenerAdapter(uri.Host, Channel, &tlsConfig, kcpConfig)
 	case "quicf":
 		// quic+fallback
 		var tlsConfig tls.Config
@@ -106,7 +100,8 @@ func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, TLS
 		}
 		tlsConfig.NextProtos = append(TLSConfig.NextProtos, "quicf")
 		return newQuicListenerAdapter(uri.Host, Channel, &tlsConfig, &quic.Config{
-			KeepAlive: true,
+			KeepAlive:               true,
+			DisablePathMTUDiscovery: true,
 		})
 	default:
 		return nil, fmt.Errorf("unknown protocol: %s", uri.Scheme)

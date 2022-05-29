@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/xpy123993/corenet"
-	"github.com/xtaci/kcp-go"
 )
 
 func generateCertificate(t *testing.T) tls.Certificate {
@@ -188,12 +187,12 @@ func TestDialerQuicBasedRelayProtocol(t *testing.T) {
 func TestDialerUsePlainRelayKCPProtocol(t *testing.T) {
 	cert := generateCertificate(t)
 
-	relayListener, err := kcp.Listen(":0")
+	relayListener, err := corenet.CreateRelayKCPListener(":0", &tls.Config{Certificates: []tls.Certificate{cert}}, corenet.DefaultKCPConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
 	relayServer := corenet.NewRelayServer()
-	go relayServer.Serve(tls.NewListener(relayListener, &tls.Config{Certificates: []tls.Certificate{cert}}), corenet.UsePlainRelayProtocol())
+	go relayServer.Serve(relayListener, corenet.UseKCPRelayProtocol())
 	time.Sleep(3 * time.Millisecond)
 	relayServerAddr := fmt.Sprintf("ktf://%s", relayListener.Addr().String())
 
