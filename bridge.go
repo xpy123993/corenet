@@ -159,8 +159,9 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 	}
 	defer clientSession.Close()
 
-	globalStatsCounterMap.Inc("relay_active_dialer_" + peerContext.Name)
-	defer globalStatsCounterMap.Dec("relay_active_dialer_" + peerContext.Name)
+	trackLabel := fmt.Sprintf("relay-active-connection-{%s}->{%s}", peerContext.Name, req.Payload)
+	globalStatsCounterMap.Inc(trackLabel)
+	defer globalStatsCounterMap.Dec(trackLabel)
 
 	clientContext, cancelFn := context.WithCancel(context.Background())
 	defer cancelFn()
