@@ -161,9 +161,10 @@ func TestDialerUsePlainRelayTCPProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	relayServer := corenet.NewRelayServer()
+	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true), corenet.WithRelayServerLogError(true))
+	defer relayServer.Close()
 	go relayServer.Serve(mainListener, corenet.UsePlainRelayProtocol())
-	time.Sleep(3 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 	relayServerAddr := fmt.Sprintf("ttf://%s", mainListener.Addr().String())
 
 	listenerDialerRoutine(t, relayServerAddr, mainListener.Addr().String())
@@ -176,7 +177,8 @@ func TestDialerQuicBasedRelayProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	relayServer := corenet.NewRelayServer()
+	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true), corenet.WithRelayServerLogError(true))
+	defer relayServer.Close()
 	go relayServer.Serve(relayListener, corenet.UseQuicRelayProtocol())
 	time.Sleep(3 * time.Millisecond)
 	relayServerAddr := fmt.Sprintf("quicf://%s", relayListener.Addr().String())
@@ -191,7 +193,8 @@ func TestDialerUsePlainRelayKCPProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	relayServer := corenet.NewRelayServer()
+	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true), corenet.WithRelayServerLogError(true))
+	defer relayServer.Close()
 	go relayServer.Serve(relayListener, corenet.UseKCPRelayProtocol())
 	time.Sleep(3 * time.Millisecond)
 	relayServerAddr := fmt.Sprintf("ktf://%s", relayListener.Addr().String())
@@ -206,7 +209,7 @@ func TestDialerListenerDifferentProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	relayServer := corenet.NewRelayServer()
+	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true), corenet.WithRelayServerLogError(true))
 
 	relayPlainListener, err := tls.Listen("tcp", ":0", &tls.Config{
 		Certificates: []tls.Certificate{cert},
@@ -268,7 +271,8 @@ func TestDialerUpgradeSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	relayServer := corenet.NewRelayServer()
+	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true), corenet.WithRelayServerLogError(true))
+	defer relayServer.Close()
 	go relayServer.Serve(relayListener, corenet.UseQuicRelayProtocol())
 	time.Sleep(3 * time.Millisecond)
 	relayServerAddr := fmt.Sprintf("quicf://%s", relayListener.Addr().String())

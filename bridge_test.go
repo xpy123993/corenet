@@ -24,7 +24,8 @@ func blockUntilDialSucceed(t *testing.T, invoke func() (net.Conn, error), deadli
 func TestRelayProto(t *testing.T) {
 	relayConnListener := corenet.NewInMemoryListener()
 
-	relayServer := corenet.NewRelayServer()
+	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true), corenet.WithRelayServerLogError(true))
+	defer relayServer.Close()
 	go relayServer.Serve(relayConnListener, corenet.UsePlainRelayProtocol())
 	reverseListenerConn, err := relayConnListener.Dial()
 	if err != nil {
@@ -77,7 +78,8 @@ func TestRelayCrossProto(t *testing.T) {
 	relayConnListener := corenet.NewInMemoryListener()
 	relayConnListenerForClient := corenet.NewInMemoryListener()
 
-	relayServer := corenet.NewRelayServer()
+	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true), corenet.WithRelayServerLogError(true))
+	defer relayServer.Close()
 	go relayServer.Serve(relayConnListener, corenet.UsePlainRelayProtocol())
 	go relayServer.Serve(relayConnListenerForClient, corenet.UsePlainRelayProtocol())
 	reverseListenerConn, err := relayConnListener.Dial()

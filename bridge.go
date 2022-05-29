@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
 )
 
 // RelayPeerContext stores the peer identification.
@@ -33,9 +34,12 @@ type RelayProtocol interface {
 type RelayServer struct {
 	mu         sync.RWMutex
 	routeTable map[string]Session
+	isClosed   bool
+	close      chan struct{}
 
-	logError                 bool
-	forceEvictChannelSession bool
+	logError                     bool
+	forceEvictChannelSession     bool
+	unsecureSkipPeerContextCheck bool
 }
 
 // RelayServerOption specifies a brdige server option.
@@ -69,6 +73,15 @@ func WithRelayServerForceEvictChannelSession(v bool) RelayServerOption {
 	}
 }
 
+// Force peer context check.
+func WithRelayServerUnsecureSkipPeerContextCheck(v bool) RelayServerOption {
+	return &relayServerOptionApplier{
+		applyFn: func(bs *RelayServer) {
+			bs.unsecureSkipPeerContextCheck = v
+		},
+	}
+}
+
 type serveContext struct {
 	conn    net.Conn
 	channel string
@@ -78,13 +91,17 @@ type serveContext struct {
 func NewRelayServer(Options ...RelayServerOption) *RelayServer {
 	bs := &RelayServer{
 		routeTable: make(map[string]Session),
+		isClosed:   false,
+		close:      make(chan struct{}),
 
-		logError:                 false,
-		forceEvictChannelSession: false,
+		logError:                     false,
+		forceEvictChannelSession:     false,
+		unsecureSkipPeerContextCheck: false,
 	}
 	for _, option := range Options {
 		option.applyTo(bs)
 	}
+	go bs.gcRoutine()
 	return bs
 }
 
@@ -156,8 +173,11 @@ func countCopy(reader io.Reader, writer io.Writer, callback func(int64)) (int64,
 func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol RelayProtocol) error {
 	peerContext, err := protocol.ExtractIdentity(conn)
 	if err != nil {
-		json.NewEncoder(conn).Encode(RelayResponse{Success: false, Payload: "verification failed"})
-		return err
+		if !s.unsecureSkipPeerContextCheck {
+			json.NewEncoder(conn).Encode(RelayResponse{Success: false, Payload: "verification failed"})
+			return err
+		}
+		peerContext = &RelayPeerContext{Name: "unknown"}
 	}
 	channelSession := s.lookupChannel(req.Payload)
 	if channelSession == nil {
@@ -268,6 +288,10 @@ func (s *RelayServer) serveConnection(conn net.Conn, protocol RelayProtocol) {
 
 // Serve starts the relay service on the specified listener.
 func (s *RelayServer) Serve(listener net.Listener, protocol RelayProtocol) error {
+	go func() {
+		<-s.close
+		listener.Close()
+	}()
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -275,6 +299,36 @@ func (s *RelayServer) Serve(listener net.Listener, protocol RelayProtocol) error
 		}
 		go s.serveConnection(conn, protocol)
 	}
+}
+
+func (s *RelayServer) gcRoutine() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.close:
+			return
+		case <-ticker.C:
+			s.mu.RLock()
+			for _, session := range s.routeTable {
+				if session.IsClosed() {
+					session.Close()
+				}
+			}
+			s.mu.RUnlock()
+		}
+	}
+}
+
+func (s *RelayServer) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.isClosed {
+		return nil
+	}
+	s.isClosed = true
+	close(s.close)
+	return nil
 }
 
 func doClientHandshake(conn io.ReadWriter, req *RelayRequest) (*RelayResponse, error) {

@@ -287,7 +287,9 @@ func (d *Dialer) tryUpdateSession(Channel string) (Session, error) {
 			originalSession.Close()
 			log.Printf("Upgrade connection to `%s`: `%s` -> `%s`", Channel, originalSession.ID(), session.ID())
 		}
-		d.channelAddresses[Channel] = sessionInfo.Addresses
+		if sessionInfo != nil {
+			d.channelAddresses[Channel] = sessionInfo.Addresses
+		}
 		d.channelSessions[Channel] = session
 		return session, nil
 	}
