@@ -198,18 +198,47 @@ func (p *listenerBasedRelayProtocol) InitChannelSession(Channel string, Listener
 	return &session, nil
 }
 
+type closableConn struct {
+	net.Conn
+
+	mu       sync.Mutex
+	done     chan struct{}
+	isClosed bool
+}
+
+func (c *closableConn) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.isClosed {
+		return nil
+	}
+	c.isClosed = true
+	close(c.done)
+	return c.Conn.Close()
+}
+
+func (c *closableConn) IsClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.isClosed
+}
+
 func (p *listenerBasedRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, error) {
-	p.mu.Lock()
-	clientConnectionUsed := false
-	p.mu.Unlock()
+	conn := &closableConn{Conn: ClientConn, done: make(chan struct{}), isClosed: false}
+	returned := false
 	session := clientSession{dialer: func() (net.Conn, error) {
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		if clientConnectionUsed {
+		if conn.IsClosed() {
 			return nil, io.EOF
 		}
-		clientConnectionUsed = true
-		return ClientConn, nil
+		p.mu.Lock()
+		if returned {
+			p.mu.Unlock()
+			<-conn.done
+			return nil, io.EOF
+		}
+		returned = true
+		defer p.mu.Unlock()
+		return conn, nil
 	}, isClosed: false, done: make(chan struct{})}
 	return &session, nil
 }

@@ -149,31 +149,28 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 	}
 	defer clientSession.Close()
 
-	wg := sync.WaitGroup{}
-	for !clientSession.IsClosed() {
+	for {
 		conn, err := clientSession.Dial()
 		if err != nil {
-			break
+			return err
 		}
-		wg.Add(1)
 		go func(conn net.Conn) {
-			defer wg.Done()
 			defer conn.Close()
 			channelConn, err := channelSession.Dial()
 			if err != nil {
 				return
 			}
 			defer channelConn.Close()
+
 			globalStatsCounterMap.Inc("relay_active_connection")
 			defer globalStatsCounterMap.Dec("relay_active_connection")
+
 			ctx, cancelFn := context.WithCancel(context.Background())
 			go func() { io.Copy(channelConn, conn); cancelFn() }()
 			go func() { io.Copy(conn, channelConn); cancelFn() }()
 			<-ctx.Done()
 		}(conn)
 	}
-	wg.Wait()
-	return nil
 }
 
 func (s *RelayServer) serveInfo(conn net.Conn, channel string) error {
