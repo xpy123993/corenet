@@ -179,6 +179,7 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 		}
 		peerContext = &RelayPeerContext{Name: "unknown"}
 	}
+
 	channelSession := s.lookupChannel(req.Payload)
 	if channelSession == nil {
 		json.NewEncoder(conn).Encode(RelayResponse{Success: false, Payload: fmt.Sprintf("channel `%s` not exists", req.Payload)})
@@ -187,6 +188,7 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 	if err := json.NewEncoder(conn).Encode(RelayResponse{Success: true}); err != nil {
 		return err
 	}
+
 	clientSession, err := protocol.InitClientSession(conn)
 	if err != nil {
 		return err
@@ -201,13 +203,14 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 		if err != nil {
 			return err
 		}
+		channelConn, err := channelSession.OpenConnection()
+		if err != nil {
+			conn.Close()
+			return err
+		}
 		trackEntry := globalStatsCounterMap.getEntry(fmt.Sprintf("corenet_relay_active_serving_connections{client=\"%s\", channel=\"%s\"}", peerContext.Name, req.Payload))
-		go func(conn net.Conn) {
+		go func(conn, channelConn net.Conn) {
 			defer conn.Close()
-			channelConn, err := channelSession.OpenConnection()
-			if err != nil {
-				return
-			}
 			defer channelConn.Close()
 
 			trackEntry.Inc()
@@ -229,7 +232,7 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 				cancelFn()
 			}()
 			<-ctx.Done()
-		}(conn)
+		}(conn, channelConn)
 	}
 }
 
