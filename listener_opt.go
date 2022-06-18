@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"time"
 
 	"github.com/lucas-clemente/quic-go"
 )
@@ -97,7 +98,15 @@ func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, Opt
 	case "ttf":
 		// tcp+tls+fallback
 		return newClientListenerAdapter(uri.Host, Channel, func() (net.Conn, error) {
-			return tls.Dial("tcp", uri.Host, Options.TLSConfig)
+			conn, err := net.Dial("tcp", uri.Host)
+			if err != nil {
+				return nil, err
+			}
+			if tcpConn, ok := conn.(*net.TCPConn); ok {
+				tcpConn.SetKeepAlive(true)
+				tcpConn.SetKeepAlivePeriod(10 * time.Second)
+			}
+			return tls.Client(conn, Options.TLSConfig), nil
 		})
 	case "ktf":
 		// kcp+tls+fallback
