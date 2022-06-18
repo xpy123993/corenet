@@ -94,6 +94,14 @@ func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, Opt
 	if len(uri.Port()) == 0 {
 		uri.Host = uri.Host + ":13300"
 	}
+	if Options == nil {
+		Options = CreateDefaultFallbackOptions()
+	}
+	relayServerTLSConfig := Options.TLSConfig
+	if relayServerTLSConfig == nil {
+		relayServerTLSConfig = &tls.Config{}
+	}
+	relayServerTLSConfig.ServerName = uri.Hostname()
 	switch uri.Scheme {
 	case "ttf":
 		// tcp+tls+fallback
@@ -106,28 +114,19 @@ func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, Opt
 				tcpConn.SetKeepAlive(true)
 				tcpConn.SetKeepAlivePeriod(10 * time.Second)
 			}
-			return tls.Client(conn, Options.TLSConfig), nil
+			return tls.Client(conn, relayServerTLSConfig), nil
 		})
 	case "ktf":
 		// kcp+tls+fallback
-		var tlsConfig tls.Config
-		if Options.TLSConfig != nil {
-			tlsConfig = *Options.TLSConfig
-		}
-		tlsConfig.ServerName = uri.Hostname()
 		kcpConfig := Options.KCPConfig
 		if kcpConfig == nil {
 			kcpConfig = DefaultKCPConfig()
 		}
-		return newKcpListenerAdapter(uri.Host, Channel, &tlsConfig, kcpConfig)
+		return newKcpListenerAdapter(uri.Host, Channel, relayServerTLSConfig, kcpConfig)
 	case "quicf":
 		// quic+fallback
-		var tlsConfig tls.Config
-		if Options.TLSConfig != nil {
-			tlsConfig = *Options.TLSConfig
-		}
-		tlsConfig.NextProtos = append(Options.TLSConfig.NextProtos, "quicf")
-		return newQuicListenerAdapter(uri.Host, Channel, &tlsConfig, Options.QuicConfig)
+		relayServerTLSConfig.NextProtos = append(Options.TLSConfig.NextProtos, "quicf")
+		return newQuicListenerAdapter(uri.Host, Channel, relayServerTLSConfig, Options.QuicConfig)
 	default:
 		return nil, fmt.Errorf("unknown protocol: %s", uri.Scheme)
 	}
