@@ -128,12 +128,8 @@ type listenerBasedRelayProtocol struct {
 
 func (p *listenerBasedRelayProtocol) InitChannelSession(Channel string, ListenerConn net.Conn) (Session, error) {
 	p.mu.Lock()
-	connChan, exist := p.connChanMap[Channel]
-	if exist && connChan != nil {
-		close(connChan)
-	}
-	p.connChanMap[Channel] = make(chan net.Conn)
-	connChan = p.connChanMap[Channel]
+	connChan := make(chan net.Conn)
+	p.connChanMap[Channel] = connChan
 	p.mu.Unlock()
 	if _, err := ListenerConn.Write([]byte{Nop}); err != nil {
 		ListenerConn.Close()
@@ -239,8 +235,8 @@ func (p *listenerBasedRelayProtocol) serveListener() {
 				p.mu.Lock()
 				connChan, exist := p.connChanMap[ctx.channel]
 				if !exist {
-					p.connChanMap[ctx.channel] = make(chan net.Conn)
-					connChan = p.connChanMap[ctx.channel]
+					ctx.conn.Close()
+					return
 				}
 				p.mu.Unlock()
 				connChan <- ctx.conn
