@@ -129,10 +129,11 @@ type listenerBasedRelayProtocol struct {
 func (p *listenerBasedRelayProtocol) InitChannelSession(Channel string, ListenerConn net.Conn) (Session, error) {
 	p.mu.Lock()
 	connChan, exist := p.connChanMap[Channel]
-	if !exist {
-		p.connChanMap[Channel] = make(chan net.Conn)
-		connChan = p.connChanMap[Channel]
+	if exist && connChan != nil {
+		close(connChan)
 	}
+	p.connChanMap[Channel] = make(chan net.Conn)
+	connChan = p.connChanMap[Channel]
 	p.mu.Unlock()
 	if _, err := ListenerConn.Write([]byte{Nop}); err != nil {
 		ListenerConn.Close()
@@ -155,7 +156,15 @@ func (p *listenerBasedRelayProtocol) InitChannelSession(Channel string, Listener
 			return nil, err
 		}
 		return sessionInfo, nil
-	}, isClosed: false, done: make(chan struct{}), closer: ListenerConn.Close, isDialerClosed: func() bool {
+	}, isClosed: false, done: make(chan struct{}), closer: func() error {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if registeredChan, exists := p.connChanMap[Channel]; exists && registeredChan == connChan {
+			delete(p.connChanMap, Channel)
+		}
+		close(connChan)
+		return ListenerConn.Close()
+	}, isDialerClosed: func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		if time.Since(lastUpdate) < 10*time.Second {
