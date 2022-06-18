@@ -73,7 +73,7 @@ func WithRelayServerForceEvictChannelSession(v bool) RelayServerOption {
 	}
 }
 
-// Force peer context check.
+//WithRelayServerUnsecureSkipPeerContextCheck specifies whether to force check peer's certificate.
 func WithRelayServerUnsecureSkipPeerContextCheck(v bool) RelayServerOption {
 	return &relayServerOptionApplier{
 		applyFn: func(bs *RelayServer) {
@@ -323,6 +323,7 @@ func (s *RelayServer) gcRoutine() {
 	}
 }
 
+// Close closes a relay server.
 func (s *RelayServer) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

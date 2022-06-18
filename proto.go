@@ -66,6 +66,7 @@ type KCPConfig struct {
 	NoCongestion int `default:"1"`
 }
 
+// DefaultKCPConfig returns a default KCP config.
 func DefaultKCPConfig() *KCPConfig {
 	return &KCPConfig{
 		MTU:          1350,

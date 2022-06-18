@@ -73,6 +73,7 @@ func WithDialerKCPConfig(config *KCPConfig) DialerOption {
 	}
 }
 
+// WithDialerLogError specifies whether to dump log errors.
 func WithDialerLogError(v bool) DialerOption {
 	return &dialerOptionApplier{
 		applyFn: func(d *Dialer) {

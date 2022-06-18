@@ -276,7 +276,7 @@ func (d *Dialer) tryUpdateSession(Channel string) (Session, error) {
 	}
 	sessionInfo, err := session.Info()
 	if err != nil {
-		sessionInfo = nil
+		return nil, err
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -331,7 +331,10 @@ func (d *Dialer) Dial(Channel string) (net.Conn, error) {
 		return session.OpenConnection()
 	}
 	if session == nil {
-		d.tryUpdateSession(Channel)
+		if _, err := d.tryUpdateSession(Channel); err != nil {
+			// Cannot establish connection at first attempt.
+			return nil, err
+		}
 	}
 	session, err := d.tryUpdateSession(Channel)
 	if err != nil {
