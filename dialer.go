@@ -124,6 +124,7 @@ func newClientTCPSession(address string) (Session, error) {
 		}
 		return nil, fmt.Errorf("cannot finish handshake")
 	}
+	trackerConns := make([]net.Conn, 0)
 	session := clientSession{
 		dialer: func() (net.Conn, error) {
 			conn, err := net.DialTimeout("tcp", address, 3*time.Second)
@@ -134,7 +135,9 @@ func newClientTCPSession(address string) (Session, error) {
 				conn.Close()
 				return nil, err
 			}
-			return createTrackConn(conn, "corenet_client_direct_tcp_active_connections"), nil
+			clientConn := createTrackConn(conn, "corenet_client_direct_tcp_active_connections")
+			trackerConns = append(trackerConns, clientConn)
+			return clientConn, nil
 		},
 		infoFn: func() (*SessionInfo, error) {
 			conn, err := net.DialTimeout("tcp", address, 3*time.Second)
@@ -148,7 +151,14 @@ func newClientTCPSession(address string) (Session, error) {
 			}
 			return sessionInfo, nil
 		},
-		closer:   conn.Close,
+		closer: func() error {
+			for _, sessionConn := range trackerConns {
+				if sessionConn != nil {
+					sessionConn.Close()
+				}
+			}
+			return conn.Close()
+		},
 		isClosed: false,
 		done:     make(chan struct{}),
 	}
