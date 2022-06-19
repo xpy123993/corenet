@@ -12,9 +12,19 @@ import (
 
 type listenerAdapterApplier struct {
 	applyFn func(*multiListener)
+	closeFn func() error
 }
 
-func (a *listenerAdapterApplier) applyTo(l *multiListener) { a.applyFn(l) }
+func (a *listenerAdapterApplier) applyTo(l *multiListener) {
+	a.applyFn(l)
+	a.closeFn = nil
+}
+func (a *listenerAdapterApplier) Close() error {
+	if a.closeFn != nil {
+		return a.closeFn()
+	}
+	return nil
+}
 
 func getAllAccessibleIPs() ([]string, error) {
 	ifaces, err := net.Interfaces()
@@ -44,6 +54,7 @@ func getAllAccessibleIPs() ([]string, error) {
 // ListenerAdapter specifies a listener that can be used for multi-listener.
 type ListenerAdapter interface {
 	applyTo(*multiListener)
+	Close() error
 }
 
 // WithListener returns a listener adapter that can be used for multi listener.
@@ -53,6 +64,7 @@ func WithListener(listener net.Listener, address []string) ListenerAdapter {
 			ml.addresses = append(ml.addresses, address...)
 			ml.listeners = append(ml.listeners, listener)
 		},
+		closeFn: listener.Close,
 	}
 }
 
@@ -66,6 +78,7 @@ func WithListenerReverseConn(conn net.Conn, dialer func() (net.Conn, error), add
 				dialer:      dialer,
 			})
 		},
+		closeFn: conn.Close,
 	}
 }
 
