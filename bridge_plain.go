@@ -14,10 +14,11 @@ type clientListenerSession struct {
 	channel          string
 	underlyingDialer func() (net.Conn, error)
 
-	id       string
-	mu       sync.Mutex
-	isClosed bool
-	close    chan struct{}
+	id           string
+	mu           sync.Mutex
+	trackedConns []net.Conn
+	isClosed     bool
+	close        chan struct{}
 }
 
 func (s *clientListenerSession) Close() error {
@@ -27,6 +28,11 @@ func (s *clientListenerSession) Close() error {
 		return nil
 	}
 	s.isClosed = true
+	for _, trackedConn := range s.trackedConns {
+		if trackedConn != nil {
+			trackedConn.Close()
+		}
+	}
 	close(s.close)
 	if s.conn != nil {
 		return s.conn.Close()
@@ -62,7 +68,9 @@ func (s *clientListenerSession) OpenConnection() (net.Conn, error) {
 		conn.Close()
 		return nil, err
 	}
-	return createTrackConn(conn, "corenet_client_plain_active_connections"), nil
+	sessionConn := createTrackConn(conn, "corenet_client_plain_active_connections")
+	s.trackedConns = append(s.trackedConns, sessionConn)
+	return sessionConn, nil
 }
 
 func (s *clientListenerSession) Info() (*SessionInfo, error) {
