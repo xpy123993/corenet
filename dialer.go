@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/netip"
 	"net/url"
 	"sync"
 	"time"
@@ -167,6 +168,7 @@ type Dialer struct {
 	quicConfig            *quic.Config
 	kcpConfig             *KCPConfig
 	logError              bool
+	channelCIDRblocklist  []netip.Prefix
 
 	mu               sync.RWMutex
 	isClosed         bool
@@ -181,8 +183,9 @@ func NewDialer(FallbackAddress []string, Options ...DialerOption) *Dialer {
 		fallbackAddress:      FallbackAddress,
 		updateChannelAddress: true,
 
-		channelAddresses: make(map[string][]string),
-		channelSessions:  make(map[string]Session),
+		channelAddresses:     make(map[string][]string),
+		channelSessions:      make(map[string]Session),
+		channelCIDRblocklist: make([]netip.Prefix, 0),
 
 		isClosed:              false,
 		close:                 make(chan struct{}),
@@ -208,6 +211,14 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 	}
 	switch uri.Scheme {
 	case "tcp":
+		ipaddr, err := netip.ParseAddr(uri.Hostname())
+		if err == nil {
+			for _, net := range d.channelCIDRblocklist {
+				if net.Contains(ipaddr) {
+					return nil, fmt.Errorf("address is in direct access blocklist")
+				}
+			}
+		}
 		return newClientTCPSession(uri.Host)
 	case "ttf":
 		return newClientListenerBasedSession(channel, func() (net.Conn, error) {
@@ -265,6 +276,32 @@ func (d *Dialer) unsafeGetChannelState(Channel string) ([]string, Session) {
 	return addresses, d.channelSessions[Channel]
 }
 
+func (d *Dialer) isAddressBlocked(addr netip.Addr) bool {
+	for _, net := range d.channelCIDRblocklist {
+		if net.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Dialer) getAllowedURIAddresses(addresses []string) []string {
+	res := make([]string, 0, len(addresses))
+	for _, address := range addresses {
+		addressURI, err := url.Parse(address)
+		if err != nil {
+			log.Printf("invalid address: %s", address)
+			continue
+		}
+		ipAddr, err := netip.ParseAddr(addressURI.Hostname())
+		if err == nil && d.isAddressBlocked(ipAddr) {
+			continue
+		}
+		res = append(res, address)
+	}
+	return res
+}
+
 // tryUpdateSession is thread-safe.
 func (d *Dialer) tryUpdateSession(Channel string) (Session, error) {
 	d.mu.RLock()
@@ -288,7 +325,7 @@ func (d *Dialer) tryUpdateSession(Channel string) (Session, error) {
 			log.Printf("Upgrade connection to `%s`: `%s` -> `%s`", Channel, originalSession.ID(), session.ID())
 		}
 		if sessionInfo != nil {
-			d.channelAddresses[Channel] = sessionInfo.Addresses
+			d.channelAddresses[Channel] = d.getAllowedURIAddresses(sessionInfo.Addresses)
 		}
 		d.channelSessions[Channel] = session
 		return session, nil

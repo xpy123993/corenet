@@ -13,6 +13,7 @@ import (
 	"log"
 	"math/big"
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"testing"
@@ -319,6 +320,66 @@ func TestDialerUpgradeSession(t *testing.T) {
 	}
 	if !strings.HasPrefix(sessionID, "127.0.0.1") {
 		t.Errorf("expect %s to be localhost", sessionID)
+	}
+	wg.Wait()
+}
+
+func TestDialerNoUpgradeSessionIfInBlocklist(t *testing.T) {
+	cert := generateCertificate(t)
+
+	relayListener, err := corenet.CreateRelayQuicListener(":0", &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true), corenet.WithRelayServerLogError(true))
+	defer relayServer.Close()
+	go relayServer.Serve(relayListener, corenet.UseQuicRelayProtocol())
+	time.Sleep(3 * time.Millisecond)
+	relayServerAddr := fmt.Sprintf("quicf://%s", relayListener.Addr().String())
+
+	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(relayServerAddr, "test-channel", &corenet.ListenerFallbackOptions{TLSConfig: &tls.Config{
+		InsecureSkipVerify: true,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	directListenerAdapter, err := corenet.CreateListenerTCPPortAdapter(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientListener := corenet.NewMultiListener(directListenerAdapter, clientListenerAdapter)
+	defer clientListener.Close()
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		conn, err := clientListener.Accept()
+		if err != nil {
+			return
+		}
+		io.Copy(conn, conn)
+		conn.Close()
+	}()
+	time.Sleep(3 * time.Millisecond)
+	dialer := corenet.NewDialer([]string{relayServerAddr}, corenet.WithDialerRelayTLSConfig(&tls.Config{
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"quicf"},
+	}), corenet.WithDialerUpdateChannelInterval(time.Millisecond),
+		corenet.WithDialerDirectAccessCIDRBlockList([]netip.Prefix{netip.MustParsePrefix("127.0.0.1/24")}))
+	conn, err := dialer.Dial("test-channel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	echoLoop(t, conn)
+	conn.Close()
+
+	time.Sleep(10 * time.Millisecond)
+	sessionID, err := dialer.GetSessionID("test-channel")
+	if err != nil {
+		t.Error(err)
+	}
+	if strings.HasPrefix(sessionID, "127.0.0.1") {
+		t.Errorf("expect %s is not changed", sessionID)
 	}
 	wg.Wait()
 }

@@ -2,6 +2,7 @@ package corenet
 
 import (
 	"crypto/tls"
+	"net/netip"
 	"time"
 
 	"github.com/lucas-clemente/quic-go"
@@ -78,6 +79,16 @@ func WithDialerLogError(v bool) DialerOption {
 	return &dialerOptionApplier{
 		applyFn: func(d *Dialer) {
 			d.logError = v
+		},
+	}
+}
+
+// WithDialerDirectAccessCIDRBlockList specifies the subnets that are not allowed for channel direct access.
+// No affect if update channel is disabled.
+func WithDialerDirectAccessCIDRBlockList(blocklist []netip.Prefix) DialerOption {
+	return &dialerOptionApplier{
+		applyFn: func(d *Dialer) {
+			d.channelCIDRblocklist = blocklist
 		},
 	}
 }
