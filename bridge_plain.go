@@ -146,6 +146,8 @@ func (p *listenerBasedRelayProtocol) InitChannelSession(Channel string, Listener
 	mu := sync.Mutex{}
 	lastUpdate := time.Now()
 	session := clientSession{dialer: func() (net.Conn, error) {
+		ListenerConn.SetDeadline(time.Now().Add(10 * time.Second))
+		defer ListenerConn.SetDeadline(time.Time{})
 		if _, err := ListenerConn.Write([]byte{Dial}); err != nil {
 			return nil, err
 		}
@@ -155,6 +157,8 @@ func (p *listenerBasedRelayProtocol) InitChannelSession(Channel string, Listener
 		}
 		return nil, io.EOF
 	}, infoFn: func() (*SessionInfo, error) {
+		ListenerConn.SetDeadline(time.Now().Add(10 * time.Second))
+		defer ListenerConn.SetDeadline(time.Time{})
 		sessionInfo, err := getSessionInfo(ListenerConn)
 		if err != nil {
 			return nil, err
@@ -174,6 +178,8 @@ func (p *listenerBasedRelayProtocol) InitChannelSession(Channel string, Listener
 		if time.Since(lastUpdate) < 10*time.Second {
 			return false
 		}
+		ListenerConn.SetDeadline(time.Now().Add(10 * time.Second))
+		defer ListenerConn.SetDeadline(time.Time{})
 		if _, err := ListenerConn.Write([]byte{Nop}); err != nil {
 			return true
 		}

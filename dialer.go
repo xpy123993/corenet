@@ -144,6 +144,7 @@ func newClientTCPSession(address string) (Session, error) {
 			if err != nil {
 				return nil, err
 			}
+			conn.SetDeadline(time.Now().Add(3 * time.Second))
 			defer conn.Close()
 			sessionInfo, err := getSessionInfo(conn)
 			if err != nil {
