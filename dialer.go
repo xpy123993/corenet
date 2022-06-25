@@ -112,11 +112,12 @@ func (s *clientSession) SetID(v string) {
 	s.addr = v
 }
 
-func newClientTCPSession(address string) (Session, error) {
+func newClientTCPSession(address string, tlsConfig *tls.Config) (Session, error) {
 	conn, err := net.DialTimeout("tcp", address, 3*time.Second)
 	if err != nil {
 		return nil, err
 	}
+	conn = tls.Client(conn, tlsConfig)
 	if n, err := conn.Write([]byte{Nop}); err != nil || n != 1 {
 		conn.Close()
 		if err != nil {
@@ -131,6 +132,7 @@ func newClientTCPSession(address string) (Session, error) {
 			if err != nil {
 				return nil, err
 			}
+			conn = tls.Client(conn, tlsConfig)
 			if _, err := conn.Write([]byte{Dial}); err != nil {
 				conn.Close()
 				return nil, err
@@ -144,6 +146,7 @@ func newClientTCPSession(address string) (Session, error) {
 			if err != nil {
 				return nil, err
 			}
+			conn = tls.Client(conn, tlsConfig)
 			defer conn.Close()
 			sessionInfo, err := getSessionInfo(conn)
 			if err != nil {
@@ -188,7 +191,7 @@ type Dialer struct {
 }
 
 // NewDialer returns a dialer.
-func NewDialer(FallbackAddress []string, Options ...DialerOption) *Dialer {
+func NewDialer(FallbackAddress []string, TLSConfig *tls.Config, Options ...DialerOption) *Dialer {
 	dialer := Dialer{
 		fallbackAddress:      FallbackAddress,
 		updateChannelAddress: true,
@@ -196,6 +199,7 @@ func NewDialer(FallbackAddress []string, Options ...DialerOption) *Dialer {
 		channelAddresses:     make(map[string][]string),
 		channelSessions:      make(map[string]Session),
 		channelCIDRblocklist: make([]netip.Prefix, 0),
+		tlsConfig:            TLSConfig,
 
 		isClosed:              false,
 		close:                 make(chan struct{}),
@@ -229,7 +233,7 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 				}
 			}
 		}
-		return newClientTCPSession(uri.Host)
+		return newClientTCPSession(uri.Host, d.tlsConfig)
 	case "ttf":
 		return newClientListenerBasedSession(channel, func() (net.Conn, error) {
 			return tls.Dial("tcp", uri.Host, d.tlsConfig)

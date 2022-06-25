@@ -114,7 +114,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		directAdapter, err := corenet.CreateListenerTCPPortAdapter(0)
+		directAdapter, err := corenet.CreateListenerTCPPortAdapter(0, &tls.Config{Certificates: []tls.Certificate{generateCertificate()}})
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -129,7 +129,7 @@ func main() {
 			go io.Copy(conn, conn)
 		}
 	case "client":
-		dialer := corenet.NewDialer([]string{*relayServerURL}, corenet.WithDialerRelayTLSConfig(&tls.Config{InsecureSkipVerify: true}), corenet.WithDialerUpdateChannelInterval(100*time.Millisecond))
+		dialer := corenet.NewDialer([]string{*relayServerURL}, &tls.Config{InsecureSkipVerify: true}, corenet.WithDialerUpdateChannelInterval(100*time.Millisecond))
 		conn, err := dialer.Dial(*channel)
 		if err != nil {
 			log.Printf("client dial failed: %v", err)

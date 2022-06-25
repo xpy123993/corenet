@@ -146,8 +146,8 @@ func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, Opt
 }
 
 // CreateListenerTCPPortAdapter creates a listener adapter listening on local port `port`.
-func CreateListenerTCPPortAdapter(port int) (ListenerAdapter, error) {
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+func CreateListenerTCPPortAdapter(port int, tlsConfig *tls.Config) (ListenerAdapter, error) {
+	lis, err := tls.Listen("tcp", fmt.Sprintf(":%d", port), tlsConfig)
 	if err != nil {
 		return nil, err
 	}

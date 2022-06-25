@@ -1,7 +1,6 @@
 package corenet
 
 import (
-	"crypto/tls"
 	"net/netip"
 	"time"
 
@@ -33,15 +32,6 @@ func WithDialerUpdateChannelAddress(v bool) DialerOption {
 	return &dialerOptionApplier{
 		applyFn: func(d *Dialer) {
 			d.updateChannelAddress = v
-		},
-	}
-}
-
-// WithDialerRelayTLSConfig specifies the TLS configuration used to communicate with fallback server.
-func WithDialerRelayTLSConfig(tlsConfig *tls.Config) DialerOption {
-	return &dialerOptionApplier{
-		applyFn: func(d *Dialer) {
-			d.tlsConfig = tlsConfig
 		},
 	}
 }

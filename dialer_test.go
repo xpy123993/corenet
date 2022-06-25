@@ -68,7 +68,8 @@ func generateCertificate(t *testing.T) tls.Certificate {
 }
 
 func TestRawDialer(t *testing.T) {
-	l1, err := corenet.CreateListenerTCPPortAdapter(0)
+	cert := generateCertificate(t)
+	l1, err := corenet.CreateListenerTCPPortAdapter(0, &tls.Config{Certificates: []tls.Certificate{cert}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,14 +84,15 @@ func TestRawDialer(t *testing.T) {
 		io.Copy(conn, conn)
 	}()
 
-	dialer := corenet.NewDialer([]string{}, corenet.WithDialerChannelInitialAddress(map[string][]string{
+	dialer := corenet.NewDialer([]string{}, &tls.Config{Certificates: []tls.Certificate{cert}, InsecureSkipVerify: true}, corenet.WithDialerChannelInitialAddress(map[string][]string{
 		"test": strings.Split(listener.Addr().String(), ","),
 	}))
 	deadline := time.Now().Add(3 * time.Second)
 
 	success := false
+	var conn net.Conn
 	for time.Now().Before(deadline) {
-		conn, err := dialer.Dial("test")
+		conn, err = dialer.Dial("test")
 		if err == nil {
 			echoLoop(t, conn)
 			success = true
@@ -99,7 +101,7 @@ func TestRawDialer(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	if !success {
-		t.Error("cannot reach to the test channel")
+		t.Fatalf("cannot reach to the test channel: %v", err)
 	}
 
 	sessionID, err := dialer.GetSessionID("test")
@@ -135,9 +137,9 @@ func listenerDialerRoutine(t *testing.T, relayServerAddr, expectSessionID string
 	}()
 	time.Sleep(3 * time.Millisecond)
 
-	dialer := corenet.NewDialer([]string{relayServerAddr}, corenet.WithDialerRelayTLSConfig(&tls.Config{
+	dialer := corenet.NewDialer([]string{relayServerAddr}, &tls.Config{
 		InsecureSkipVerify: true,
-	}))
+	})
 	conn, err := dialer.Dial("test-channel")
 	if err != nil {
 		t.Fatal(err)
@@ -245,10 +247,10 @@ func TestDialerListenerDifferentProtocol(t *testing.T) {
 		conn.Close()
 	}()
 	time.Sleep(3 * time.Millisecond)
-	dialer := corenet.NewDialer([]string{fmt.Sprintf("ttf://%s", relayPlainListener.Addr().String())}, corenet.WithDialerRelayTLSConfig(&tls.Config{
+	dialer := corenet.NewDialer([]string{fmt.Sprintf("ttf://%s", relayPlainListener.Addr().String())}, &tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"quicf"},
-	}), corenet.WithDialerUpdateChannelAddress(false))
+	}, corenet.WithDialerUpdateChannelAddress(false))
 	conn, err := dialer.Dial("test-channel")
 	if err != nil {
 		t.Fatal(err)
@@ -272,7 +274,8 @@ func TestDialerUpgradeSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true), corenet.WithRelayServerLogError(true))
+	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true),
+		corenet.WithRelayServerLogError(true))
 	defer relayServer.Close()
 	go relayServer.Serve(relayListener, corenet.UseQuicRelayProtocol())
 	time.Sleep(3 * time.Millisecond)
@@ -284,7 +287,7 @@ func TestDialerUpgradeSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	directListenerAdapter, err := corenet.CreateListenerTCPPortAdapter(0)
+	directListenerAdapter, err := corenet.CreateListenerTCPPortAdapter(0, &tls.Config{Certificates: []tls.Certificate{cert}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,10 +305,11 @@ func TestDialerUpgradeSession(t *testing.T) {
 		conn.Close()
 	}()
 	time.Sleep(3 * time.Millisecond)
-	dialer := corenet.NewDialer([]string{relayServerAddr}, corenet.WithDialerRelayTLSConfig(&tls.Config{
+	dialer := corenet.NewDialer([]string{relayServerAddr}, &tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"quicf"},
-	}), corenet.WithDialerUpdateChannelInterval(time.Millisecond))
+		Certificates:       []tls.Certificate{cert},
+	}, corenet.WithDialerUpdateChannelInterval(time.Millisecond))
 	conn, err := dialer.Dial("test-channel")
 	if err != nil {
 		t.Fatal(err)
@@ -343,7 +347,7 @@ func TestDialerNoUpgradeSessionIfInBlocklist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	directListenerAdapter, err := corenet.CreateListenerTCPPortAdapter(0)
+	directListenerAdapter, err := corenet.CreateListenerTCPPortAdapter(0, &tls.Config{Certificates: []tls.Certificate{cert}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,10 +365,11 @@ func TestDialerNoUpgradeSessionIfInBlocklist(t *testing.T) {
 		conn.Close()
 	}()
 	time.Sleep(3 * time.Millisecond)
-	dialer := corenet.NewDialer([]string{relayServerAddr}, corenet.WithDialerRelayTLSConfig(&tls.Config{
+	dialer := corenet.NewDialer([]string{relayServerAddr}, &tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"quicf"},
-	}), corenet.WithDialerUpdateChannelInterval(time.Millisecond),
+		Certificates:       []tls.Certificate{cert},
+	}, corenet.WithDialerUpdateChannelInterval(time.Millisecond),
 		corenet.WithDialerDirectAccessCIDRBlockList([]netip.Prefix{netip.MustParsePrefix("127.0.0.1/24")}))
 	conn, err := dialer.Dial("test-channel")
 	if err != nil {
