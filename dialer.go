@@ -233,7 +233,9 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 				}
 			}
 		}
-		return newClientTCPSession(uri.Host, d.tlsConfig)
+		tlsConfig := d.tlsConfig.Clone()
+		tlsConfig.ServerName = channel
+		return newClientTCPSession(uri.Host, tlsConfig)
 	case "ttf":
 		return newClientListenerBasedSession(channel, func() (net.Conn, error) {
 			return tls.Dial("tcp", uri.Host, d.tlsConfig)
