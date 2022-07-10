@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xpy123993/corenet"
+	"git.yuki.nu/corenet"
 )
 
 func blockUntilDialSucceed(t *testing.T, invoke func() (net.Conn, error), deadline time.Time) net.Conn {
