@@ -94,7 +94,7 @@ func CreateDefaultFallbackOptions() *ListenerFallbackOptions {
 	return &ListenerFallbackOptions{
 		TLSConfig:  nil,
 		KCPConfig:  DefaultKCPConfig(),
-		QuicConfig: &quic.Config{KeepAlive: true},
+		QuicConfig: &quic.Config{KeepAlivePeriod: 20 * time.Second},
 	}
 }
 

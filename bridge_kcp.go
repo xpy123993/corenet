@@ -6,7 +6,7 @@ import (
 	"log"
 	"net"
 
-	"github.com/xtaci/kcp-go"
+	"github.com/xtaci/kcp-go/v5"
 	"github.com/xtaci/smux"
 )
 
