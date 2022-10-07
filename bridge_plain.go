@@ -64,9 +64,15 @@ func (s *clientListenerSession) OpenConnection() (net.Conn, error) {
 		s.Close()
 		return nil, err
 	}
-	if _, err := doClientHandshake(conn, &RelayRequest{Type: Dial, Payload: s.channel}); err != nil {
+	resp, err := doClientHandshake(conn, &RelayRequest{Type: Dial, Payload: s.channel})
+	if err != nil {
 		conn.Close()
 		return nil, err
+	}
+	if !resp.Success {
+		conn.Close()
+		s.Close()
+		return nil, fmt.Errorf(resp.Payload)
 	}
 	sessionConn := createTrackConn(conn, "corenet_client_plain_active_connections")
 	s.trackedConns = append(s.trackedConns, sessionConn)
@@ -99,8 +105,15 @@ func newClientListenerBasedSession(channel string, underlyingDialer func() (net.
 		return nil, err
 	}
 	session := clientListenerSession{conn: probeConn, underlyingDialer: underlyingDialer, channel: channel, close: make(chan struct{})}
+	if err := json.NewEncoder(probeConn).Encode(&RelayRequest{Type: Nop, Payload: channel}); err != nil {
+		session.Close()
+		probeConn.Close()
+		return nil, err
+	}
 	go func() {
-		doClientHandshake(probeConn, &RelayRequest{Type: Nop, Payload: channel})
+		buf := make([]byte, 1)
+		probeConn.Read(buf)
+		probeConn.Close()
 		session.Close()
 	}()
 	return &session, nil

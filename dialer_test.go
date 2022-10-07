@@ -171,6 +171,29 @@ func TestDialerUsePlainRelayTCPProtocol(t *testing.T) {
 	listenerDialerRoutine(t, relayServerAddr, mainListener.Addr().String())
 }
 
+func TestDialerUsePlainRelayTCPProtocolChannelNotExists(t *testing.T) {
+	cert := generateCertificate(t)
+	mainListener, err := tls.Listen("tcp", ":0", &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true), corenet.WithRelayServerLogError(true))
+	defer relayServer.Close()
+	go relayServer.Serve(mainListener, corenet.UsePlainRelayProtocol())
+	time.Sleep(10 * time.Millisecond)
+	relayServerAddr := fmt.Sprintf("ttf://%s", mainListener.Addr().String())
+
+	dialer := corenet.NewDialer([]string{relayServerAddr}, corenet.WithDialerRelayTLSConfig(&tls.Config{
+		InsecureSkipVerify: true,
+	}))
+	_, err = dialer.Dial("test-channel")
+	if err == nil || !strings.Contains(err.Error(), "not exists") {
+		t.Errorf("expect a not exist error, got %v", err)
+	}
+}
+
 func TestDialerQuicBasedRelayProtocol(t *testing.T) {
 	cert := generateCertificate(t)
 

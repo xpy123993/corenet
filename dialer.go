@@ -332,8 +332,10 @@ func (d *Dialer) tryUpdateSession(Channel string) (Session, error) {
 	originalSession, exist := d.channelSessions[Channel]
 	if !exist || originalSession.IsClosed() || originalSession.ID() != session.ID() {
 		if originalSession != nil {
+			if !originalSession.IsClosed() {
+				log.Printf("Upgrade connection to `%s`: `%s` -> `%s`", Channel, originalSession.ID(), session.ID())
+			}
 			originalSession.Close()
-			log.Printf("Upgrade connection to `%s`: `%s` -> `%s`", Channel, originalSession.ID(), session.ID())
 		}
 		if sessionInfo != nil {
 			d.channelAddresses[Channel] = d.getAllowedURIAddresses(sessionInfo.Addresses)
