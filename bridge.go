@@ -8,8 +8,11 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/url"
 	"sync"
 	"time"
+
+	"github.com/lucas-clemente/quic-go"
 )
 
 // RelayPeerContext stores the peer identification.
@@ -302,6 +305,39 @@ func (s *RelayServer) Serve(listener net.Listener, protocol RelayProtocol) error
 		}
 		go s.serveConnection(conn, protocol)
 	}
+}
+
+func (s *RelayServer) ServeURL(address string, tlsConfig *tls.Config) error {
+	serverURL, err := url.Parse(address)
+	if err != nil {
+		return err
+	}
+	port := serverURL.Port()
+	if len(port) == 0 {
+		port = "13300"
+	}
+	serviceAddress := fmt.Sprintf(":%s", port)
+	switch serverURL.Scheme {
+	case "ttf":
+		relayServerListener, err := tls.Listen("tcp", serviceAddress, tlsConfig)
+		if err != nil {
+			return fmt.Errorf("failed to bind %s: %v", serverURL.String(), err)
+		}
+		return s.Serve(relayServerListener, UsePlainRelayProtocol())
+	case "ktf":
+		relayServerListener, err := CreateRelayKCPListener(serviceAddress, tlsConfig, DefaultKCPConfig())
+		if err != nil {
+			return fmt.Errorf("failed to bind %s: %v", serverURL.String(), err)
+		}
+		return s.Serve(relayServerListener, UseKCPRelayProtocol())
+	case "quicf":
+		relayServerListener, err := CreateRelayQuicListener(serviceAddress, tlsConfig, &quic.Config{})
+		if err != nil {
+			return fmt.Errorf("failed to bind %s: %v", serverURL.String(), err)
+		}
+		return s.Serve(relayServerListener, UseQuicRelayProtocol())
+	}
+	return fmt.Errorf("unsupported scheme: %s", serverURL.Scheme)
 }
 
 func (s *RelayServer) gcRoutine() {
