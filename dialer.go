@@ -244,7 +244,9 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 		if kcpConfig == nil {
 			kcpConfig = DefaultKCPConfig()
 		}
-		TLSConfig.ServerName = uri.Hostname()
+		if len(TLSConfig.ServerName) == 0 {
+			TLSConfig.ServerName = uri.Hostname()
+		}
 		return newClientKcpBasedSession(uri.Host, channel, &TLSConfig, kcpConfig)
 	case "quicf":
 		var TLSConfig tls.Config

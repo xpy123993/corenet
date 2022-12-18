@@ -114,7 +114,9 @@ func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, Opt
 	if relayServerTLSConfig == nil {
 		relayServerTLSConfig = &tls.Config{}
 	}
-	relayServerTLSConfig.ServerName = uri.Hostname()
+	if len(relayServerTLSConfig.ServerName) == 0 {
+		relayServerTLSConfig.ServerName = uri.Hostname()
+	}
 	switch uri.Scheme {
 	case "ttf":
 		// tcp+tls+fallback
