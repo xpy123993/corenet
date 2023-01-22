@@ -59,7 +59,21 @@ func (s *clientListenerSession) SetID(v string) {
 }
 
 func (s *clientListenerSession) OpenConnection() (net.Conn, error) {
+	t := globalStatsCounterMap.getEntry(fmt.Sprintf("corenet_session_pending_connections{session=\"%s\"}", s.ID()))
+	t.Inc()
+	handshakeFinished := make(chan struct{})
+	go func() {
+		timer := time.NewTimer(sessionOpenTimeout)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			s.Close()
+		case <-handshakeFinished:
+		}
+	}()
 	conn, err := s.underlyingDialer()
+	close(handshakeFinished)
+	t.Dec()
 	if err != nil {
 		s.Close()
 		return nil, err
@@ -158,47 +172,53 @@ func (p *listenerBasedRelayProtocol) InitChannelSession(Channel string, Listener
 	}
 	mu := sync.Mutex{}
 	lastUpdate := time.Now()
-	session := clientSession{dialer: func() (net.Conn, error) {
-		ListenerConn.SetDeadline(time.Now().Add(10 * time.Second))
-		defer ListenerConn.SetDeadline(time.Time{})
-		if _, err := ListenerConn.Write([]byte{Dial}); err != nil {
-			return nil, err
-		}
-		remoteConn, ok := <-connChan
-		if ok {
-			return remoteConn, nil
-		}
-		return nil, io.EOF
-	}, infoFn: func() (*SessionInfo, error) {
-		ListenerConn.SetDeadline(time.Now().Add(10 * time.Second))
-		defer ListenerConn.SetDeadline(time.Time{})
-		sessionInfo, err := getSessionInfo(ListenerConn)
-		if err != nil {
-			return nil, err
-		}
-		return sessionInfo, nil
-	}, isClosed: false, done: make(chan struct{}), closer: func() error {
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		if registeredChan, exists := p.connChanMap[Channel]; exists && registeredChan == connChan {
-			delete(p.connChanMap, Channel)
-		}
-		close(connChan)
-		return ListenerConn.Close()
-	}, isDialerClosed: func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		if time.Since(lastUpdate) < 10*time.Second {
+	session := clientSession{
+		dialer: func() (net.Conn, error) {
+			ListenerConn.SetDeadline(time.Now().Add(10 * time.Second))
+			defer ListenerConn.SetDeadline(time.Time{})
+			if _, err := ListenerConn.Write([]byte{Dial}); err != nil {
+				return nil, err
+			}
+			remoteConn, ok := <-connChan
+			if ok {
+				return remoteConn, nil
+			}
+			return nil, io.EOF
+		},
+		infoFn: func() (*SessionInfo, error) {
+			ListenerConn.SetDeadline(time.Now().Add(10 * time.Second))
+			defer ListenerConn.SetDeadline(time.Time{})
+			sessionInfo, err := getSessionInfo(ListenerConn)
+			if err != nil {
+				return nil, err
+			}
+			return sessionInfo, nil
+		},
+		isClosed: false, done: make(chan struct{}), closer: func() error {
+			p.mu.Lock()
+			defer p.mu.Unlock()
+			if registeredChan, exists := p.connChanMap[Channel]; exists && registeredChan == connChan {
+				delete(p.connChanMap, Channel)
+			}
+			close(connChan)
+			return ListenerConn.Close()
+		},
+		isDialerClosed: func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			if time.Since(lastUpdate) < 10*time.Second {
+				return false
+			}
+			ListenerConn.SetDeadline(time.Now().Add(10 * time.Second))
+			defer ListenerConn.SetDeadline(time.Time{})
+			if _, err := ListenerConn.Write([]byte{Nop}); err != nil {
+				return true
+			}
+			lastUpdate = time.Now()
 			return false
-		}
-		ListenerConn.SetDeadline(time.Now().Add(10 * time.Second))
-		defer ListenerConn.SetDeadline(time.Time{})
-		if _, err := ListenerConn.Write([]byte{Nop}); err != nil {
-			return true
-		}
-		lastUpdate = time.Now()
-		return false
-	}}
+		},
+		addr: fmt.Sprintf("ttf://localhost?channel=%s", Channel),
+	}
 	return &session, nil
 }
 
@@ -230,20 +250,26 @@ func (c *closableConn) IsClosed() bool {
 func (p *listenerBasedRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, error) {
 	conn := &closableConn{Conn: ClientConn, done: make(chan struct{}), isClosed: false}
 	returned := false
-	session := clientSession{dialer: func() (net.Conn, error) {
-		if conn.IsClosed() {
-			return nil, io.EOF
-		}
-		p.mu.Lock()
-		if returned {
-			p.mu.Unlock()
-			<-conn.done
-			return nil, io.EOF
-		}
-		returned = true
-		defer p.mu.Unlock()
-		return conn, nil
-	}, isClosed: false, done: make(chan struct{}), closer: conn.Close}
+	session := clientSession{
+		dialer: func() (net.Conn, error) {
+			if conn.IsClosed() {
+				return nil, io.EOF
+			}
+			p.mu.Lock()
+			if returned {
+				p.mu.Unlock()
+				<-conn.done
+				return nil, io.EOF
+			}
+			returned = true
+			defer p.mu.Unlock()
+			return conn, nil
+		},
+		isClosed: false,
+		done:     make(chan struct{}),
+		closer:   conn.Close,
+		addr:     fmt.Sprintf("ttf://%s", ClientConn.RemoteAddr().String()),
+	}
 	return &session, nil
 }
 

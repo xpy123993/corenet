@@ -97,6 +97,7 @@ func (p *quicRelayProtocol) InitChannelSession(Channel string, ListenerConn net.
 		},
 		closer:         func() error { return packetConn.Connection.CloseWithError(1, "") },
 		isDialerClosed: func() bool { return packetConn.Connection.Context().Err() != nil },
+		addr:           fmt.Sprintf("quicf://localhost?channel=%s", Channel),
 	}
 	return session, nil
 }
@@ -118,6 +119,7 @@ func (p *quicRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, err
 		},
 		closer:         func() error { return packetConn.Connection.CloseWithError(1, "") },
 		isDialerClosed: func() bool { return packetConn.Connection.Context().Err() != nil },
+		addr:           fmt.Sprintf("quicf://%s", ClientConn.RemoteAddr().String()),
 	}
 	return session, nil
 }

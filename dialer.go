@@ -13,6 +13,10 @@ import (
 	"github.com/lucas-clemente/quic-go"
 )
 
+var (
+	sessionOpenTimeout = 5 * time.Second
+)
+
 type clientSession struct {
 	dialer         func() (net.Conn, error)
 	infoFn         func() (*SessionInfo, error)
@@ -79,7 +83,21 @@ func (s *clientSession) OpenConnection() (net.Conn, error) {
 	if s.IsClosed() {
 		return nil, fmt.Errorf("already closed")
 	}
+	t := globalStatsCounterMap.getEntry(fmt.Sprintf("corenet_session_pending_connections{session=\"%s\"}", s.ID()))
+	t.Inc()
+	handshakeFinished := make(chan struct{})
+	go func() {
+		timer := time.NewTimer(sessionOpenTimeout)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			s.Close()
+		case <-handshakeFinished:
+		}
+	}()
 	conn, err := s.dialer()
+	close(handshakeFinished)
+	t.Dec()
 	if err != nil {
 		s.Close()
 	}

@@ -105,6 +105,7 @@ func (p *kcpRelayProtocol) InitChannelSession(Channel string, ListenerConn net.C
 		},
 		isDialerClosed: connSession.IsClosed,
 		closer:         connSession.Close,
+		addr:           fmt.Sprintf("ktf://localhost?channel=%s", Channel),
 	}, nil
 }
 
@@ -125,6 +126,7 @@ func (p *kcpRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, erro
 		},
 		isDialerClosed: connSession.IsClosed,
 		closer:         connSession.Close,
+		addr:           fmt.Sprintf("ktf://%s", ClientConn.RemoteAddr().String()),
 	}, nil
 }
 
