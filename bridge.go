@@ -76,7 +76,7 @@ func WithRelayServerForceEvictChannelSession(v bool) RelayServerOption {
 	}
 }
 
-//WithRelayServerUnsecureSkipPeerContextCheck specifies whether to force check peer's certificate.
+// WithRelayServerUnsecureSkipPeerContextCheck specifies whether to force check peer's certificate.
 func WithRelayServerUnsecureSkipPeerContextCheck(v bool) RelayServerOption {
 	return &relayServerOptionApplier{
 		applyFn: func(bs *RelayServer) {
@@ -206,7 +206,21 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 		if err != nil {
 			return err
 		}
+		t := globalStatsCounterMap.getEntry(fmt.Sprintf("corenet_relay_pending_serving_connections{client=\"%s\", channel=\"%s\"}", peerContext.Name, req.Payload))
+		t.Inc()
+		handshakeFinished := make(chan struct{})
+		go func() {
+			timer := time.NewTimer(3 * time.Second)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				channelSession.Close()
+				conn.Close()
+			case <-handshakeFinished:
+			}
+		}()
 		channelConn, err := channelSession.OpenConnection()
+		t.Dec()
 		if err != nil {
 			conn.Close()
 			return err
