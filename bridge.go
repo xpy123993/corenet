@@ -220,6 +220,7 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 			}
 		}()
 		channelConn, err := channelSession.OpenConnection()
+		close(handshakeFinished)
 		t.Dec()
 		if err != nil {
 			conn.Close()
