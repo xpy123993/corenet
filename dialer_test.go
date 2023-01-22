@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"git.yuki.nu/corenet"
+	"git.yuki.nu/xpy123993/corenet"
 )
 
 func generateCertificate(t *testing.T) tls.Certificate {

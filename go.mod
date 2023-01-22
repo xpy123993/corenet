@@ -1,4 +1,4 @@
-module git.yuki.nu/corenet
+module git.yuki.nu/xpy123993/corenet
 
 go 1.18
 

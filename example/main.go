@@ -17,7 +17,7 @@ import (
 	"net/url"
 	"time"
 
-	"git.yuki.nu/corenet"
+	"git.yuki.nu/xpy123993/corenet"
 )
 
 var (

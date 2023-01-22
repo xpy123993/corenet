@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"git.yuki.nu/corenet"
+	"git.yuki.nu/xpy123993/corenet"
 )
 
 func echoLoop(t *testing.T, conn net.Conn) {
