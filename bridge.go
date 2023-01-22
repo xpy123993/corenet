@@ -202,11 +202,11 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 	defer cancelFn()
 
 	for {
-		conn, err := clientSession.OpenConnection()
+		conn, err := clientSession.OpenConnection(false)
 		if err != nil {
 			return err
 		}
-		channelConn, err := channelSession.OpenConnection()
+		channelConn, err := channelSession.OpenConnection(true)
 		if err != nil {
 			conn.Close()
 			return err

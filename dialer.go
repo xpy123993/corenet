@@ -35,7 +35,7 @@ type Session interface {
 	IsClosed() bool
 	Done() chan struct{}
 
-	OpenConnection() (net.Conn, error)
+	OpenConnection(withTimeout bool) (net.Conn, error)
 	Info() (*SessionInfo, error)
 
 	ID() string
@@ -79,25 +79,29 @@ func (s *clientSession) IsClosed() bool {
 	return s.isClosed
 }
 
-func (s *clientSession) OpenConnection() (net.Conn, error) {
+func (s *clientSession) OpenConnection(withTimeout bool) (net.Conn, error) {
 	if s.IsClosed() {
 		return nil, fmt.Errorf("already closed")
 	}
-	t := globalStatsCounterMap.getEntry(fmt.Sprintf("corenet_session_pending_connections{session=\"%s\"}", s.ID()))
-	t.Inc()
-	handshakeFinished := make(chan struct{})
-	go func() {
-		timer := time.NewTimer(sessionOpenTimeout)
-		defer timer.Stop()
-		select {
-		case <-timer.C:
-			s.Close()
-		case <-handshakeFinished:
-		}
-	}()
+	if withTimeout {
+		t := globalStatsCounterMap.getEntry(fmt.Sprintf("corenet_session_pending_connections{session=\"%s\"}", s.ID()))
+		t.Inc()
+		handshakeFinished := make(chan struct{})
+		defer func() {
+			close(handshakeFinished)
+			t.Dec()
+		}()
+		go func() {
+			timer := time.NewTimer(sessionOpenTimeout)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				s.Close()
+			case <-handshakeFinished:
+			}
+		}()
+	}
 	conn, err := s.dialer()
-	close(handshakeFinished)
-	t.Dec()
 	if err != nil {
 		s.Close()
 	}
@@ -398,7 +402,7 @@ func (d *Dialer) Dial(Channel string) (net.Conn, error) {
 	session, exists := d.channelSessions[Channel]
 	d.mu.RUnlock()
 	if exists && !session.IsClosed() {
-		return session.OpenConnection()
+		return session.OpenConnection(true)
 	}
 	if session == nil {
 		if _, err := d.tryUpdateSession(Channel); err != nil {
@@ -410,7 +414,7 @@ func (d *Dialer) Dial(Channel string) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return session.OpenConnection()
+	return session.OpenConnection(true)
 }
 
 // GetSessionID returns the session information of the channel.

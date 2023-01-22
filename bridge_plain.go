@@ -58,22 +58,26 @@ func (s *clientListenerSession) SetID(v string) {
 	s.id = v
 }
 
-func (s *clientListenerSession) OpenConnection() (net.Conn, error) {
-	t := globalStatsCounterMap.getEntry(fmt.Sprintf("corenet_session_pending_connections{session=\"%s\"}", s.ID()))
-	t.Inc()
-	handshakeFinished := make(chan struct{})
-	go func() {
-		timer := time.NewTimer(sessionOpenTimeout)
-		defer timer.Stop()
-		select {
-		case <-timer.C:
-			s.Close()
-		case <-handshakeFinished:
-		}
-	}()
+func (s *clientListenerSession) OpenConnection(withTimeout bool) (net.Conn, error) {
+	if withTimeout {
+		t := globalStatsCounterMap.getEntry(fmt.Sprintf("corenet_session_pending_connections{session=\"%s\"}", s.ID()))
+		t.Inc()
+		handshakeFinished := make(chan struct{})
+		defer func() {
+			close(handshakeFinished)
+			t.Dec()
+		}()
+		go func() {
+			timer := time.NewTimer(sessionOpenTimeout)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				s.Close()
+			case <-handshakeFinished:
+			}
+		}()
+	}
 	conn, err := s.underlyingDialer()
-	close(handshakeFinished)
-	t.Dec()
 	if err != nil {
 		s.Close()
 		return nil, err
