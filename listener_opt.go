@@ -33,6 +33,12 @@ func getAllAccessibleIPs() ([]string, error) {
 	}
 	ret := []string{}
 	for _, i := range ifaces {
+		if i.Flags&(net.FlagPointToPoint|net.FlagLoopback) != 0 {
+			continue
+		}
+		if i.Flags&net.FlagUp == 0 {
+			continue
+		}
 		addrs, err := i.Addrs()
 		if err != nil {
 			return nil, err
