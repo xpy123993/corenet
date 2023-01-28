@@ -307,10 +307,11 @@ func TestDialerUpgradeSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	directListenerAdapter, err := corenet.CreateListenerTCPPortAdapter(0)
+	lis, err := net.Listen("tcp", "0.0.0.0:0")
 	if err != nil {
 		t.Fatal(err)
 	}
+	directListenerAdapter := corenet.WithListener(lis, []string{fmt.Sprintf("tcp://%s", lis.Addr().String())})
 	clientListener := corenet.NewMultiListener(directListenerAdapter, clientListenerAdapter)
 	defer clientListener.Close()
 	wg := sync.WaitGroup{}
@@ -341,8 +342,8 @@ func TestDialerUpgradeSession(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if !strings.HasPrefix(sessionID, "127.0.0.1") {
-		t.Errorf("expect %s to be localhost", sessionID)
+	if !strings.HasPrefix(sessionID, lis.Addr().(*net.TCPAddr).IP.String()) {
+		t.Errorf("expect %s to be %s", sessionID, lis.Addr().(*net.TCPAddr).IP.String())
 	}
 	wg.Wait()
 }

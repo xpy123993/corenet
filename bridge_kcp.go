@@ -2,6 +2,7 @@ package corenet
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -122,6 +123,10 @@ func (p *kcpRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, erro
 			if err != nil {
 				return nil, err
 			}
+			if err := json.NewEncoder(stream).Encode(RelayResponse{Success: true}); err != nil {
+				stream.Close()
+				return nil, err
+			}
 			return stream, nil
 		},
 		isDialerClosed: connSession.IsClosed,
@@ -189,6 +194,15 @@ func newClientKcpBasedSession(address, channel string, tlsConfig *tls.Config, kc
 			stream, err := connSession.OpenStream()
 			if err != nil {
 				return nil, err
+			}
+			resp := RelayResponse{}
+			if err := json.NewDecoder(stream).Decode(&resp); err != nil {
+				stream.Close()
+				return nil, err
+			}
+			if !resp.Success {
+				stream.Close()
+				return nil, fmt.Errorf("application error: %s", resp.Payload)
 			}
 			return createTrackConn(stream, "corenet_client_kcp_active_connections"), nil
 		},

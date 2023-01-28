@@ -3,6 +3,7 @@ package corenet
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -115,6 +116,16 @@ func (p *quicRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, err
 			if err != nil {
 				return nil, err
 			}
+			if err := json.NewDecoder(stream).Decode(new(RelayRequest)); err != nil {
+				stream.CancelRead(0)
+				stream.Close()
+				return nil, err
+			}
+			if err := json.NewEncoder(stream).Encode(RelayResponse{Success: true}); err != nil {
+				stream.CancelRead(0)
+				stream.Close()
+				return nil, err
+			}
 			return &quicConn{Stream: stream, Connection: packetConn.Connection}, nil
 		},
 		closer:         func() error { return packetConn.Connection.CloseWithError(1, "") },
@@ -209,6 +220,11 @@ func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config, q
 		dialer: func() (net.Conn, error) {
 			stream, err := conn.OpenStream()
 			if err != nil {
+				return nil, err
+			}
+			if _, err := doClientHandshake(stream, &RelayRequest{Type: Nop}); err != nil {
+				stream.CancelRead(0)
+				stream.Close()
 				return nil, err
 			}
 			return createTrackConn(&quicConn{Stream: stream, Connection: conn}, "corenet_client_quic_active_connections"), nil

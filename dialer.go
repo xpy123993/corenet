@@ -417,6 +417,15 @@ func (d *Dialer) Dial(Channel string) (net.Conn, error) {
 	return session.OpenConnection(true)
 }
 
+func (d *Dialer) CloseSession(Channel string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if session, exists := d.channelSessions[Channel]; exists {
+		session.Close()
+		delete(d.channelSessions, Channel)
+	}
+}
+
 // GetSessionID returns the session information of the channel.
 func (d *Dialer) GetSessionID(Channel string) (string, error) {
 	d.mu.RLock()
