@@ -6,6 +6,7 @@ require (
 	github.com/lucas-clemente/quic-go v0.31.1
 	github.com/xtaci/kcp-go/v5 v5.6.1
 	github.com/xtaci/smux v1.5.17
+	golang.org/x/net v0.5.0
 )
 
 require (
@@ -24,7 +25,6 @@ require (
 	golang.org/x/crypto v0.5.0 // indirect
 	golang.org/x/exp v0.0.0-20230118134722-a68e582fa157 // indirect
 	golang.org/x/mod v0.7.0 // indirect
-	golang.org/x/net v0.5.0 // indirect
 	golang.org/x/sys v0.4.0 // indirect
 	golang.org/x/tools v0.5.0 // indirect
 )
