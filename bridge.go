@@ -363,11 +363,13 @@ func (s *RelayServer) ServeURL(address string, tlsConfig *tls.Config) error {
 	serviceAddress := fmt.Sprintf(":%s", port)
 	switch serverURL.Scheme {
 	case "ttf":
-		relayServerListener, err := tls.Listen("tcp", serviceAddress, tlsConfig)
+		lis, err := (&net.ListenConfig{
+			KeepAlive: 10 * time.Second,
+		}).Listen(context.Background(), "tcp", serviceAddress)
 		if err != nil {
 			return fmt.Errorf("failed to bind %s: %v", serverURL.String(), err)
 		}
-		return s.Serve(relayServerListener, UsePlainRelayProtocol())
+		return s.Serve(tls.NewListener(lis, tlsConfig), UsePlainRelayProtocol())
 	case "ktf":
 		relayServerListener, err := CreateRelayKCPListener(serviceAddress, tlsConfig, DefaultKCPConfig())
 		if err != nil {
