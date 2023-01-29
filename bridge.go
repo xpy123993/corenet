@@ -240,34 +240,38 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 		trackEntry := globalStatsCounterMap.getEntry(fmt.Sprintf("corenet_relay_active_serving_connections{client=\"%s\", channel=\"%s\"}", peerContext.Name, req.Payload))
 		go func(conn, channelConn net.Conn) {
 			connTracker := trace.New("Relay.Serve", fmt.Sprintf("`%s` <=> `%s`", peerContext.Name, req.Payload))
-			defer conn.Close()
-			defer channelConn.Close()
-			defer connTracker.Finish()
-
 			trackEntry.Inc()
 			defer trackEntry.Dec()
 
 			ctx, cancelFn := context.WithCancel(clientContext)
+			wg := sync.WaitGroup{}
+			wg.Add(2)
 			go func() {
 				connTracker.LazyPrintf("Write connection is opened")
-				defer connTracker.LazyPrintf("Write connection is closed")
 				entry := globalStatsCounterMap.getEntry(fmt.Sprintf("corenet_relay_transfer_bytes{source=\"%s\", target=\"%s\"}", peerContext.Name, req.Payload))
 				countCopy(channelConn, conn, func(i int64) {
 					entry.Delta(i)
 				})
 				cancelFn()
+				connTracker.LazyPrintf("Write connection is closed")
+				wg.Done()
 			}()
 			go func() {
 				connTracker.LazyPrintf("Read connection is opened")
-				defer connTracker.LazyPrintf("Read connection is closed")
 				entry := globalStatsCounterMap.getEntry(fmt.Sprintf("corenet_relay_transfer_bytes{source=\"%s\", target=\"%s\"}", req.Payload, peerContext.Name))
 				countCopy(conn, channelConn, func(i int64) {
 					entry.Delta(i)
 				})
 				cancelFn()
+				connTracker.LazyPrintf("Read connection is closed")
+				wg.Done()
 			}()
 			<-ctx.Done()
+			conn.Close()
+			channelConn.Close()
+			wg.Wait()
 			connTracker.LazyPrintf("Connection closed: %v", ctx.Err())
+			connTracker.Finish()
 		}(conn, channelConn)
 	}
 }
