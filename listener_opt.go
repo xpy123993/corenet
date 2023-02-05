@@ -126,7 +126,7 @@ func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, Opt
 	switch uri.Scheme {
 	case "ttf":
 		// tcp+tls+fallback
-		return newClientListenerAdapter(uri.Host, Channel, func() (net.Conn, error) {
+		return CreateSmuxListenerAdapter(func() (net.Conn, error) {
 			conn, err := net.Dial("tcp", uri.Host)
 			if err != nil {
 				return nil, err
@@ -136,14 +136,17 @@ func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, Opt
 				tcpConn.SetKeepAlivePeriod(10 * time.Second)
 			}
 			return tls.Client(conn, relayServerTLSConfig), nil
-		})
+		}, uri.String(), Channel)
 	case "ktf":
 		// kcp+tls+fallback
 		kcpConfig := Options.KCPConfig
 		if kcpConfig == nil {
 			kcpConfig = DefaultKCPConfig()
 		}
-		return newKcpListenerAdapter(uri.Host, Channel, relayServerTLSConfig, kcpConfig)
+		dialer := func() (net.Conn, error) {
+			return createKCPConnection(uri.Host, relayServerTLSConfig, kcpConfig)
+		}
+		return CreateSmuxListenerAdapter(dialer, uri.String(), Channel)
 	case "quicf":
 		// quic+fallback
 		relayServerTLSConfig.NextProtos = append(Options.TLSConfig.NextProtos, "quicf")

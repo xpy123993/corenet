@@ -254,9 +254,9 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 		}
 		return newClientTCPSession(uri.Host)
 	case "ttf":
-		return newClientListenerBasedSession(channel, func() (net.Conn, error) {
+		return newSmuxClientSession(func() (net.Conn, error) {
 			return tls.Dial("tcp", uri.Host, d.tlsConfig)
-		})
+		}, channel)
 	case "ktf":
 		var TLSConfig tls.Config
 		if d.tlsConfig != nil {
@@ -269,7 +269,10 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 		if len(TLSConfig.ServerName) == 0 {
 			TLSConfig.ServerName = uri.Hostname()
 		}
-		return newClientKcpBasedSession(uri.Host, channel, &TLSConfig, kcpConfig)
+		dialer := func() (net.Conn, error) {
+			return createKCPConnection(uri.Host, &TLSConfig, kcpConfig)
+		}
+		return newSmuxClientSession(dialer, channel)
 	case "quicf":
 		var TLSConfig tls.Config
 		if d.tlsConfig != nil {

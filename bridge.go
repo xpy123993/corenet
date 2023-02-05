@@ -369,13 +369,13 @@ func (s *RelayServer) ServeURL(address string, tlsConfig *tls.Config) error {
 		if err != nil {
 			return fmt.Errorf("failed to bind %s: %v", serverURL.String(), err)
 		}
-		return s.Serve(tls.NewListener(lis, tlsConfig), UsePlainRelayProtocol())
+		return s.Serve(tls.NewListener(lis, tlsConfig), UseSmuxRelayProtocol())
 	case "ktf":
 		relayServerListener, err := CreateRelayKCPListener(serviceAddress, tlsConfig, DefaultKCPConfig())
 		if err != nil {
 			return fmt.Errorf("failed to bind %s: %v", serverURL.String(), err)
 		}
-		return s.Serve(relayServerListener, UseKCPRelayProtocol())
+		return s.Serve(relayServerListener, UseSmuxRelayProtocol())
 	case "quicf":
 		relayServerListener, err := CreateRelayQuicListener(serviceAddress, tlsConfig, &quic.Config{})
 		if err != nil {
@@ -424,6 +424,9 @@ func doClientHandshake(conn io.ReadWriter, req *RelayRequest) (*RelayResponse, e
 	resp := RelayResponse{}
 	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
 		return nil, fmt.Errorf("remote error: %v", err)
+	}
+	if !resp.Success {
+		return nil, fmt.Errorf(resp.Payload)
 	}
 	return &resp, nil
 }

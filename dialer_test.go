@@ -164,7 +164,7 @@ func TestDialerUsePlainRelayTCPProtocol(t *testing.T) {
 	}
 	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true), corenet.WithRelayServerLogError(true))
 	defer relayServer.Close()
-	go relayServer.Serve(mainListener, corenet.UsePlainRelayProtocol())
+	go relayServer.Serve(mainListener, corenet.UseSmuxRelayProtocol())
 	time.Sleep(10 * time.Millisecond)
 	relayServerAddr := fmt.Sprintf("ttf://%s", mainListener.Addr().String())
 
@@ -181,7 +181,7 @@ func TestDialerUsePlainRelayTCPProtocolChannelNotExists(t *testing.T) {
 	}
 	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true), corenet.WithRelayServerLogError(true))
 	defer relayServer.Close()
-	go relayServer.Serve(mainListener, corenet.UsePlainRelayProtocol())
+	go relayServer.Serve(mainListener, corenet.UseSmuxRelayProtocol())
 	time.Sleep(10 * time.Millisecond)
 	relayServerAddr := fmt.Sprintf("ttf://%s", mainListener.Addr().String())
 
@@ -189,8 +189,8 @@ func TestDialerUsePlainRelayTCPProtocolChannelNotExists(t *testing.T) {
 		InsecureSkipVerify: true,
 	}))
 	_, err = dialer.Dial("test-channel")
-	if err == nil || !strings.Contains(err.Error(), "not exists") {
-		t.Errorf("expect a not exist error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "unavailable") {
+		t.Errorf("expect an unavailable error, got %v", err)
 	}
 }
 
@@ -219,7 +219,7 @@ func TestDialerUsePlainRelayKCPProtocol(t *testing.T) {
 	}
 	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true), corenet.WithRelayServerLogError(true))
 	defer relayServer.Close()
-	go relayServer.Serve(relayListener, corenet.UseKCPRelayProtocol())
+	go relayServer.Serve(relayListener, corenet.UseSmuxRelayProtocol())
 	time.Sleep(3 * time.Millisecond)
 	relayServerAddr := fmt.Sprintf("ktf://%s", relayListener.Addr().String())
 
@@ -244,7 +244,7 @@ func TestDialerListenerDifferentProtocol(t *testing.T) {
 	defer relayPlainListener.Close()
 
 	go relayServer.Serve(relayListener, corenet.UseQuicRelayProtocol())
-	go relayServer.Serve(relayPlainListener, corenet.UsePlainRelayProtocol())
+	go relayServer.Serve(relayPlainListener, corenet.UseSmuxRelayProtocol())
 
 	time.Sleep(10 * time.Millisecond)
 

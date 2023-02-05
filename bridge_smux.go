@@ -1,83 +1,42 @@
 package corenet
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 
-	"github.com/xtaci/kcp-go/v5"
 	"github.com/xtaci/smux"
 )
 
-// kcpListener is a wrapper to accept kcp connection and apply the corresponding config.
-type kcpListener struct {
-	*kcp.Listener
-	config *KCPConfig
-}
-
-// CreateRelayKCPListener creates a KCP listener for the relay service.
-func CreateRelayKCPListener(Addr string, TLSConfig *tls.Config, KCPConfig *KCPConfig) (net.Listener, error) {
-	lis, err := kcp.ListenWithOptions(Addr, nil, KCPConfig.DataShard, KCPConfig.ParityShard)
-	if err != nil {
-		return nil, err
-	}
-	return tls.NewListener(&kcpListener{lis, KCPConfig}, TLSConfig), nil
-}
-
-func (lis *kcpListener) Accept() (net.Conn, error) {
-	conn, err := lis.AcceptKCP()
-	if err != nil {
-		return nil, err
-	}
-	conn.SetStreamMode(true)
-	conn.SetMtu(lis.config.MTU)
-	conn.SetNoDelay(lis.config.NoDelay, lis.config.Interval, lis.config.Resend, lis.config.NoCongestion)
-	conn.SetWindowSize(lis.config.SndWnd, lis.config.RcvWnd)
-	return conn, nil
-}
-
-func createKCPConnection(Addr string, TLSConfig *tls.Config, kcpConfig *KCPConfig) (net.Conn, error) {
-	conn, err := kcp.DialWithOptions(Addr, nil, kcpConfig.DataShard, kcpConfig.ParityShard)
-	if err != nil {
-		return nil, err
-	}
-	conn.SetStreamMode(true)
-	conn.SetMtu(kcpConfig.MTU)
-	conn.SetNoDelay(kcpConfig.NoDelay, kcpConfig.Interval, kcpConfig.Resend, kcpConfig.NoCongestion)
-	conn.SetWindowSize(kcpConfig.SndWnd, kcpConfig.RcvWnd)
-	return tls.Client(conn, TLSConfig), nil
-}
-
-// kcpConnListener is a wrapper to convert a smux.Session as a listener.
-type kcpConnListener struct {
+// smuxConnListener is a wrapper to convert a smux.Session as a listener.
+type smuxConnListener struct {
 	*smux.Session
 }
 
-func (l *kcpConnListener) Accept() (net.Conn, error) {
+func (l *smuxConnListener) Accept() (net.Conn, error) {
 	return l.Session.AcceptStream()
 }
 
-func (l *kcpConnListener) Addr() net.Addr {
+func (l *smuxConnListener) Addr() net.Addr {
 	return l.LocalAddr()
 }
 
-// UseKCPRelayProtocol provides a relay protocol based on kcp.
-func UseKCPRelayProtocol() RelayProtocol {
-	return &kcpRelayProtocol{}
+// UseSmuxRelayProtocol provides a relay protocol based on kcp.
+func UseSmuxRelayProtocol() RelayProtocol {
+	return &smuxRelayProtocol{}
 }
 
-type kcpRelayProtocol struct {
+type smuxRelayProtocol struct {
 }
 
-func (p *kcpRelayProtocol) ServeChannel() chan serveContext { return nil }
+func (p *smuxRelayProtocol) ServeChannel() chan serveContext { return nil }
 
-func (p *kcpRelayProtocol) ExtractIdentity(Conn net.Conn) (*RelayPeerContext, error) {
+func (p *smuxRelayProtocol) ExtractIdentity(Conn net.Conn) (*RelayPeerContext, error) {
 	return extractIdentityFromTLSConn(Conn)
 }
 
-func (p *kcpRelayProtocol) InitChannelSession(Channel string, ListenerConn net.Conn) (Session, error) {
+func (p *smuxRelayProtocol) InitChannelSession(Channel string, ListenerConn net.Conn) (Session, error) {
 	connSession, err := smux.Client(ListenerConn, nil)
 	if err != nil {
 		return nil, err
@@ -110,7 +69,7 @@ func (p *kcpRelayProtocol) InitChannelSession(Channel string, ListenerConn net.C
 	}, nil
 }
 
-func (p *kcpRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, error) {
+func (p *smuxRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, error) {
 	connSession, err := smux.Server(ClientConn, nil)
 	if err != nil {
 		return nil, err
@@ -135,12 +94,12 @@ func (p *kcpRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, erro
 	}, nil
 }
 
-func newKcpListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, KCPConfig *KCPConfig) (ListenerAdapter, error) {
-	conn, err := createKCPConnection(Addr, TLSConfig, KCPConfig)
+func CreateSmuxListenerAdapter(dialer func() (net.Conn, error), url, channel string) (ListenerAdapter, error) {
+	conn, err := dialer()
 	if err != nil {
 		return nil, err
 	}
-	if _, err := doClientHandshake(conn, &RelayRequest{Type: Bind, Payload: Channel}); err != nil {
+	if _, err := doClientHandshake(conn, &RelayRequest{Type: Bind, Payload: channel}); err != nil {
 		conn.Close()
 		return nil, err
 	}
@@ -149,11 +108,11 @@ func newKcpListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, KCPConfi
 		conn.Close()
 		return nil, err
 	}
-	return WithListener(&kcpConnListener{server}, []string{fmt.Sprintf("ktf://%s?channel=%s", Addr, Channel)}), nil
+	return WithListener(&smuxConnListener{server}, []string{url}), nil
 }
 
-func getKcpChannelInfo(address, channel string, tlsConfig *tls.Config, KCPConfig *KCPConfig) (*SessionInfo, error) {
-	conn, err := createKCPConnection(address, tlsConfig, KCPConfig)
+func getSmuxChannelInfo(dialer func() (net.Conn, error), channel string) (*SessionInfo, error) {
+	conn, err := dialer()
 	if err != nil {
 		return nil, err
 	}
@@ -166,8 +125,8 @@ func getKcpChannelInfo(address, channel string, tlsConfig *tls.Config, KCPConfig
 	return &resp.SessionInfo, nil
 }
 
-func newClientKcpBasedSession(address, channel string, tlsConfig *tls.Config, kcpConfig *KCPConfig) (Session, error) {
-	conn, err := createKCPConnection(address, tlsConfig, kcpConfig)
+func newSmuxClientSession(dialer func() (net.Conn, error), channel string) (Session, error) {
+	conn, err := dialer()
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +142,7 @@ func newClientKcpBasedSession(address, channel string, tlsConfig *tls.Config, kc
 		return nil, err
 	}
 
-	sessionInfo, err := getKcpChannelInfo(address, channel, tlsConfig, kcpConfig)
+	sessionInfo, err := getSmuxChannelInfo(dialer, channel)
 	if err != nil {
 		log.Printf("Failed to obtain session info for %s: %v", channel, err)
 		sessionInfo = nil
