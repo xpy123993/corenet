@@ -86,7 +86,7 @@ func serveRelay() error {
 			log.Fatal(err)
 		}
 		server := corenet.NewRelayServer(corenet.WithRelayServerForceEvictChannelSession(true))
-		return server.Serve(mainLis, corenet.UsePlainRelayProtocol())
+		return server.Serve(mainLis, corenet.UseSmuxRelayProtocol())
 	case "quicf":
 		lis, err := corenet.CreateRelayQuicListener(serverURL.Host, &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
 		if err != nil {
