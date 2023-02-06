@@ -194,14 +194,15 @@ func newClientTCPSession(address string) (Session, error) {
 
 // Dialer provides a general client to communicate with MultiListener.
 type Dialer struct {
-	fallbackAddress       []string
-	updateChannelAddress  bool
-	updateChannelInterval time.Duration
-	tlsConfig             *tls.Config
-	quicConfig            *quic.Config
-	kcpConfig             *KCPConfig
-	logError              bool
-	channelCIDRblocklist  []netip.Prefix
+	fallbackAddress            []string
+	updateChannelAddress       bool
+	updateChannelInterval      time.Duration
+	tlsConfig                  *tls.Config
+	quicConfig                 *quic.Config
+	kcpConfig                  *KCPConfig
+	logError                   bool
+	channelCIDRblocklist       []netip.Prefix
+	connectionAddressBlocklist map[string]bool
 
 	mu               sync.RWMutex
 	isClosed         bool
@@ -216,9 +217,10 @@ func NewDialer(FallbackAddress []string, Options ...DialerOption) *Dialer {
 		fallbackAddress:      FallbackAddress,
 		updateChannelAddress: true,
 
-		channelAddresses:     make(map[string][]string),
-		channelSessions:      make(map[string]Session),
-		channelCIDRblocklist: make([]netip.Prefix, 0),
+		channelAddresses:           make(map[string][]string),
+		channelSessions:            make(map[string]Session),
+		channelCIDRblocklist:       make([]netip.Prefix, 0),
+		connectionAddressBlocklist: make(map[string]bool),
 
 		isClosed:              false,
 		close:                 make(chan struct{}),
@@ -235,6 +237,9 @@ func NewDialer(FallbackAddress []string, Options ...DialerOption) *Dialer {
 
 // createConnection is lock-free.
 func (d *Dialer) createConnection(address string, channel string) (Session, error) {
+	if blocked, exists := d.connectionAddressBlocklist[address]; exists && blocked {
+		return nil, fmt.Errorf("address is in direct access blocklist")
+	}
 	uri, err := url.Parse(address)
 	if err != nil {
 		return nil, err
@@ -296,7 +301,8 @@ func (d *Dialer) establishChannel(Channel string, addresses []string, curSession
 		}
 		session, err := d.createConnection(address, Channel)
 		if err == nil {
-			session.SetID(addressURI.Hostname())
+			addressURI.Path = ""
+			session.SetID(addressURI.String())
 			return session, nil
 		}
 		if d.logError {

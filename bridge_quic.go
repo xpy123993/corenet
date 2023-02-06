@@ -168,7 +168,7 @@ func newQuicListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, QuicCon
 		conn.CloseWithError(1, err.Error())
 		return nil, err
 	}
-	return WithListener(&quicConnListener{conn}, []string{fmt.Sprintf("quicf://%s?channel=%s", Addr, Channel)}), nil
+	return WithListener(&quicConnListener{conn}, []string{fmt.Sprintf("quicf://%s/%s", Addr, Channel)}), nil
 }
 
 func getQuicChannelInfo(address, channel string, tlsConfig *tls.Config, quicConfig *quic.Config) (*SessionInfo, error) {

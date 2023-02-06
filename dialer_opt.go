@@ -2,6 +2,7 @@ package corenet
 
 import (
 	"crypto/tls"
+	"net"
 	"net/netip"
 	"time"
 
@@ -89,6 +90,21 @@ func WithDialerDirectAccessCIDRBlockList(blocklist []netip.Prefix) DialerOption 
 	return &dialerOptionApplier{
 		applyFn: func(d *Dialer) {
 			d.channelCIDRblocklist = blocklist
+		},
+	}
+}
+
+// WithDialerBlockMultiListener add the listening address of a multi listener to its blocklist to avoid recusive connection.
+func WithDialerBlockMultiListener(lis net.Listener) DialerOption {
+	return &dialerOptionApplier{
+		applyFn: func(d *Dialer) {
+			mlis, ok := lis.(*multiListener)
+			if !ok {
+				return
+			}
+			for _, address := range mlis.addresses {
+				d.connectionAddressBlocklist[address] = true
+			}
 		},
 	}
 }
