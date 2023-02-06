@@ -302,6 +302,7 @@ func (d *Dialer) establishChannel(Channel string, addresses []string, curSession
 		session, err := d.createConnection(address, Channel)
 		if err == nil {
 			addressURI.Path = ""
+			addressURI.RawQuery = ""
 			session.SetID(addressURI.String())
 			return session, nil
 		}
