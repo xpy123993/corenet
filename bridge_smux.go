@@ -1,7 +1,6 @@
 package corenet
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -65,7 +64,7 @@ func (p *smuxRelayProtocol) InitChannelSession(Channel string, ListenerConn net.
 		},
 		isDialerClosed: connSession.IsClosed,
 		closer:         connSession.Close,
-		addr:           fmt.Sprintf("ktf://localhost?channel=%s", Channel),
+		addr:           fmt.Sprintf("smux://localhost?channel=%s", Channel),
 	}, nil
 }
 
@@ -82,15 +81,11 @@ func (p *smuxRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, err
 			if err != nil {
 				return nil, err
 			}
-			if err := json.NewEncoder(stream).Encode(RelayResponse{Success: true}); err != nil {
-				stream.Close()
-				return nil, err
-			}
 			return stream, nil
 		},
 		isDialerClosed: connSession.IsClosed,
 		closer:         connSession.Close,
-		addr:           fmt.Sprintf("ktf://%s", ClientConn.RemoteAddr().String()),
+		addr:           fmt.Sprintf("smux://%s", ClientConn.RemoteAddr().String()),
 	}, nil
 }
 
@@ -153,15 +148,6 @@ func newSmuxClientSession(dialer func() (net.Conn, error), channel string) (Sess
 			stream, err := connSession.OpenStream()
 			if err != nil {
 				return nil, err
-			}
-			resp := RelayResponse{}
-			if err := json.NewDecoder(stream).Decode(&resp); err != nil {
-				stream.Close()
-				return nil, err
-			}
-			if !resp.Success {
-				stream.Close()
-				return nil, fmt.Errorf("application error: %s", resp.Payload)
 			}
 			return createTrackConn(stream, "corenet_client_kcp_active_connections"), nil
 		},
