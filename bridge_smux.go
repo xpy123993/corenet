@@ -1,6 +1,7 @@
 package corenet
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -81,6 +82,10 @@ func (p *smuxRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, err
 			if err != nil {
 				return nil, err
 			}
+			if err := json.NewEncoder(stream).Encode(RelayResponse{Success: true}); err != nil {
+				stream.Close()
+				return nil, err
+			}
 			return stream, nil
 		},
 		isDialerClosed: connSession.IsClosed,
@@ -149,7 +154,16 @@ func newSmuxClientSession(dialer func() (net.Conn, error), channel string) (Sess
 			if err != nil {
 				return nil, err
 			}
-			return createTrackConn(stream, "corenet_client_kcp_active_connections"), nil
+			resp := RelayResponse{}
+			if err := json.NewDecoder(stream).Decode(&resp); err != nil {
+				stream.Close()
+				return nil, err
+			}
+			if !resp.Success {
+				stream.Close()
+				return nil, fmt.Errorf("application error: %s", resp.Payload)
+			}
+			return createTrackConn(stream, "corenet_client_smux_active_connections"), nil
 		},
 		infoFn: func() (*SessionInfo, error) {
 			if sessionInfo != nil {
