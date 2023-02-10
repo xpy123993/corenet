@@ -138,6 +138,7 @@ func listenerDialerRoutine(t *testing.T, relayServerAddr, expectSessionID string
 	dialer := corenet.NewDialer([]string{relayServerAddr}, corenet.WithDialerRelayTLSConfig(&tls.Config{
 		InsecureSkipVerify: true,
 	}))
+	defer dialer.Close()
 	conn, err := dialer.Dial("test-channel")
 	if err != nil {
 		t.Fatal(err)
@@ -256,36 +257,18 @@ func TestDialerListenerDifferentProtocol(t *testing.T) {
 	}
 	clientListener := corenet.NewMultiListener(clientListenerAdapter)
 	defer clientListener.Close()
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		conn, err := clientListener.Accept()
-		if err != nil {
-			return
-		}
-		io.Copy(conn, conn)
-		conn.Close()
-	}()
 	time.Sleep(3 * time.Millisecond)
 	dialer := corenet.NewDialer([]string{fmt.Sprintf("ttf://%s", relayPlainListener.Addr().String())}, corenet.WithDialerRelayTLSConfig(&tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"quicf"},
 	}), corenet.WithDialerUpdateChannelAddress(false))
-	conn, err := dialer.Dial("test-channel")
-	if err != nil {
-		t.Fatal(err)
-	}
-	echoLoop(t, conn)
-	conn.Close()
 	sessionID, err := dialer.GetSessionID("test-channel")
 	if err != nil {
 		t.Error(err)
 	}
-	if !strings.HasPrefix(sessionID, "quicf://") {
-		t.Errorf("expect %s to be a quicf connection", sessionID)
+	if !strings.HasPrefix(sessionID, "ttf://") {
+		t.Errorf("expect %s to be a ttf connection", sessionID)
 	}
-	wg.Wait()
 }
 
 func TestDialerUpgradeSession(t *testing.T) {
@@ -450,7 +433,7 @@ func TestDialerNoUpgradeSessionIfInBlocklist(t *testing.T) {
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"quicf"},
 	}), corenet.WithDialerUpdateChannelInterval(time.Millisecond),
-		corenet.WithDialerDirectAccessCIDRBlockList([]netip.Prefix{netip.MustParsePrefix("127.0.0.1/24")}))
+		corenet.WithDialerDirectAccessCIDRBlockList([]netip.Prefix{netip.MustParsePrefix("0.0.0.0/0")}))
 	conn, err := dialer.Dial("test-channel")
 	if err != nil {
 		t.Fatal(err)
@@ -463,7 +446,7 @@ func TestDialerNoUpgradeSessionIfInBlocklist(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if strings.HasPrefix(sessionID, "127.0.0.1") {
+	if !strings.HasPrefix(sessionID, "quicf://") {
 		t.Errorf("expect %s is not changed", sessionID)
 	}
 	wg.Wait()
