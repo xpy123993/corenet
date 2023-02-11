@@ -234,6 +234,9 @@ func newDialerSession(ChannelName string, InitialAddresses, FallbackAddresses []
 func (d *dialerSession) unsafeUpgradeConnection() {
 	addresses := append(d.channelAddresses, d.fallbackAddresses...)
 	triedAddresses := make(map[string]bool)
+	if d.session != nil && d.session.IsClosed() {
+		d.session = nil
+	}
 	for _, address := range addresses {
 		sessionID, err := parseSessionID(address)
 		if err != nil {
@@ -279,7 +282,7 @@ func (d *dialerSession) ID() (string, error) {
 	if d.session != nil {
 		return d.session.ID(), nil
 	}
-	return "", fmt.Errorf("unavailable")
+	return "", fmt.Errorf("unavailable on all addresses")
 }
 
 func (d *dialerSession) Dial() (net.Conn, error) {
@@ -292,7 +295,7 @@ func (d *dialerSession) Dial() (net.Conn, error) {
 	if d.session != nil {
 		return d.session.OpenConnection(true)
 	}
-	return nil, fmt.Errorf("unavailable")
+	return nil, fmt.Errorf("unavailable on all addresses")
 }
 
 func (d *dialerSession) Close() error {
