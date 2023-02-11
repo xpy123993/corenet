@@ -12,8 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lucas-clemente/quic-go"
-	"golang.org/x/net/trace"
+	"github.com/quic-go/quic-go"
 )
 
 // RelayPeerContext stores the peer identification.
@@ -133,38 +132,26 @@ func (s *RelayServer) registerChannel(channel string, session Session) error {
 }
 
 func (s *RelayServer) serveBind(conn net.Conn, channel string, protocol RelayProtocol) error {
-	tracker := trace.New("Relay.Bind", channel)
-	defer tracker.Finish()
-
 	if err := json.NewEncoder(conn).Encode(RelayResponse{Success: true}); err != nil {
-		tracker.LazyPrintf("Post handshake error: %v", err)
-		tracker.SetError()
 		return err
 	}
 
 	session, err := protocol.InitChannelSession(channel, conn)
 	if err != nil {
-		tracker.LazyPrintf("Initialize channel error: %v", err)
-		tracker.SetError()
 		return err
 	}
 
 	if err := s.registerChannel(channel, session); err != nil {
-		tracker.LazyPrintf("Register channel error: %v", err)
-		tracker.SetError()
 		session.Close()
 		return err
 	}
 
 	<-session.Done()
 
-	tracker.LazyPrintf("Session is closed")
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if session == s.routeTable[channel] {
 		delete(s.routeTable, channel)
-		tracker.LazyPrintf("Session is removed from the channel table")
 	}
 	return nil
 }
@@ -196,26 +183,17 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 		peerContext = &RelayPeerContext{Name: "unknown"}
 	}
 
-	tracker := trace.New("Relay.Dial", req.Payload)
-	defer tracker.Finish()
-
 	channelSession := s.lookupChannel(req.Payload)
 	if channelSession == nil {
 		json.NewEncoder(conn).Encode(RelayResponse{Success: false, Payload: fmt.Sprintf("channel `%s` not exists", req.Payload)})
-		tracker.LazyPrintf("Channel not found.")
-		tracker.SetError()
 		return fmt.Errorf("channel `%s` not exists", req.Payload)
 	}
 	if err := json.NewEncoder(conn).Encode(RelayResponse{Success: true}); err != nil {
-		tracker.LazyPrintf("Post handshake error: %v", err)
-		tracker.SetError()
 		return err
 	}
 
 	clientSession, err := protocol.InitClientSession(conn)
 	if err != nil {
-		tracker.LazyPrintf("Initialize client session error: %v", err)
-		tracker.SetError()
 		return err
 	}
 	defer clientSession.Close()
@@ -224,67 +202,47 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 	defer cancelFn()
 
 	for {
-		conn, err := clientSession.OpenConnection(false)
+		clientConn, err := clientSession.OpenConnection(false)
 		if err != nil {
-			tracker.LazyPrintf("Client session closed: %v", err)
-			tracker.SetError()
 			return err
 		}
 		channelConn, err := channelSession.OpenConnection(true)
 		if err != nil {
-			tracker.LazyPrintf("Channel session closed: %v", err)
-			tracker.SetError()
-			conn.Close()
+			clientConn.Close()
 			return err
 		}
 		trackEntry := globalStatsCounterMap.getEntry(fmt.Sprintf("corenet_relay_active_serving_connections{client=\"%s\", channel=\"%s\"}", peerContext.Name, req.Payload))
 		go func(conn, channelConn net.Conn) {
-			connTracker := trace.New("Relay.Serve", fmt.Sprintf("`%s` <=> `%s`", peerContext.Name, req.Payload))
 			trackEntry.Inc()
 			defer trackEntry.Dec()
+			defer conn.Close()
+			defer channelConn.Close()
 
 			ctx, cancelFn := context.WithCancel(clientContext)
-			wg := sync.WaitGroup{}
-			wg.Add(2)
 			go func() {
-				connTracker.LazyPrintf("Write connection is opened")
 				entry := globalStatsCounterMap.getEntry(fmt.Sprintf("corenet_relay_transfer_bytes{source=\"%s\", target=\"%s\"}", peerContext.Name, req.Payload))
 				countCopy(channelConn, conn, func(i int64) {
 					entry.Delta(i)
 				})
 				cancelFn()
-				connTracker.LazyPrintf("Write connection is closed")
-				wg.Done()
 			}()
 			go func() {
-				connTracker.LazyPrintf("Read connection is opened")
 				entry := globalStatsCounterMap.getEntry(fmt.Sprintf("corenet_relay_transfer_bytes{source=\"%s\", target=\"%s\"}", req.Payload, peerContext.Name))
 				countCopy(conn, channelConn, func(i int64) {
 					entry.Delta(i)
 				})
 				cancelFn()
-				connTracker.LazyPrintf("Read connection is closed")
-				wg.Done()
 			}()
 			<-ctx.Done()
-			conn.Close()
-			channelConn.Close()
-			wg.Wait()
-			connTracker.LazyPrintf("Connection closed: %v", ctx.Err())
-			connTracker.Finish()
-		}(conn, channelConn)
+
+		}(clientConn, channelConn)
 	}
 }
 
 func (s *RelayServer) serveInfo(conn net.Conn, channel string) error {
-	tracker := trace.New("Relay.Info", channel)
-	defer tracker.Finish()
-
 	channelSession := s.lookupChannel(channel)
 	if channelSession == nil {
 		json.NewEncoder(conn).Encode(RelayResponse{Success: false, Payload: fmt.Sprintf("channel `%s` not exists", channel)})
-		tracker.LazyPrintf("Channel not found.")
-		tracker.SetError()
 		return fmt.Errorf("channel `%s` not exists", channel)
 	}
 	resp := RelayResponse{Success: true}
@@ -293,8 +251,6 @@ func (s *RelayServer) serveInfo(conn net.Conn, channel string) error {
 		resp.SessionInfo = *sessionInfo
 	}
 	if err := json.NewEncoder(conn).Encode(resp); err != nil {
-		tracker.LazyPrintf("Client session closed: %v", err)
-		tracker.SetError()
 		return err
 	}
 	return nil
