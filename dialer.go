@@ -277,12 +277,9 @@ func (d *dialerSession) ID() (string, error) {
 	defer d.mu.Unlock()
 
 	if d.session == nil || d.session.IsClosed() {
-		d.unsafeUpgradeConnection()
+		return "", fmt.Errorf("unreachable")
 	}
-	if d.session != nil {
-		return d.session.ID(), nil
-	}
-	return "", fmt.Errorf("unavailable on all addresses")
+	return d.session.ID(), nil
 }
 
 func (d *dialerSession) Dial() (net.Conn, error) {
