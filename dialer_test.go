@@ -262,6 +262,11 @@ func TestDialerListenerDifferentProtocol(t *testing.T) {
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"quicf"},
 	}), corenet.WithDialerUpdateChannelAddress(false))
+	conn, err := dialer.Dial("test-channel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
 	sessionID, err := dialer.GetSessionID("test-channel")
 	if err != nil {
 		t.Error(err)
