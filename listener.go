@@ -15,17 +15,11 @@ type addr struct {
 func (a *addr) Network() string { return "multi" }
 func (a *addr) String() string  { return a.str }
 
-type reverseListener struct {
-	controlConn net.Conn
-	dialer      func() (net.Conn, error)
-}
-
 type multiListener struct {
-	done             chan struct{}
-	connChan         chan net.Conn
-	addresses        []string
-	listeners        []net.Listener
-	reverseListeners []*reverseListener
+	done      chan struct{}
+	connChan  chan net.Conn
+	addresses []string
+	listeners []net.Listener
 
 	inflight sync.WaitGroup
 	mu       sync.Mutex
@@ -33,14 +27,14 @@ type multiListener struct {
 }
 
 // NewMultiListener returns a general listener that listens on all adapters.
+// This listener returns streaming connection.
 func NewMultiListener(adapters ...ListenerAdapter) net.Listener {
 	l := &multiListener{
-		done:             make(chan struct{}),
-		connChan:         make(chan net.Conn),
-		addresses:        []string{},
-		listeners:        []net.Listener{},
-		reverseListeners: []*reverseListener{},
-		isClosed:         false,
+		done:      make(chan struct{}),
+		connChan:  make(chan net.Conn),
+		addresses: []string{},
+		listeners: []net.Listener{},
+		isClosed:  false,
 	}
 
 	for _, adapter := range adapters {
@@ -49,12 +43,6 @@ func NewMultiListener(adapters ...ListenerAdapter) net.Listener {
 	for _, listener := range l.listeners {
 		go func(listener net.Listener) {
 			l.serveListener(listener)
-			l.Close()
-		}(listener)
-	}
-	for _, listener := range l.reverseListeners {
-		go func(listener *reverseListener) {
-			l.serveReverseListenerConn(listener.controlConn, listener.dialer)
 			l.Close()
 		}(listener)
 	}
@@ -71,9 +59,6 @@ func (l *multiListener) Close() error {
 	for _, listener := range l.listeners {
 		listener.Close()
 	}
-	for _, reverseListener := range l.reverseListeners {
-		reverseListener.controlConn.Close()
-	}
 	close(l.done)
 	l.inflight.Wait()
 	close(l.connChan)
@@ -84,38 +69,6 @@ func (l *multiListener) IsClosed() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.isClosed
-}
-
-func (l *multiListener) serveReverseListenerConn(conn net.Conn, dialer func() (net.Conn, error)) {
-	globalStatsCounterMap.Inc("listener_active_reverse_listener")
-	defer globalStatsCounterMap.Dec("listener_active_reverse_listener")
-
-	p := make([]byte, 1)
-	for !l.IsClosed() {
-		if n, err := conn.Read(p); err != nil || n != 1 {
-			return
-		}
-		switch p[0] {
-		case Nop:
-		case Info:
-			if err := json.NewEncoder(conn).Encode(SessionInfo{Addresses: l.addresses}); err != nil {
-				return
-			}
-		case Dial:
-			remoteConn, err := dialer()
-			if err != nil || l.IsClosed() {
-				return
-			}
-			l.inflight.Add(1)
-			defer l.inflight.Done()
-			select {
-			case <-l.done:
-				remoteConn.Close()
-				return
-			case l.connChan <- remoteConn:
-			}
-		}
-	}
 }
 
 func (l *multiListener) serveIncomingConn(conn net.Conn) {

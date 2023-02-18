@@ -1,7 +1,6 @@
 package corenet_test
 
 import (
-	"bufio"
 	"encoding/gob"
 	"io"
 	"net"
@@ -93,27 +92,6 @@ func TestListener(t *testing.T) {
 		t.Fatal(err)
 	}
 	echoLoop(t, conn)
-}
-
-func TestReverseListener(t *testing.T) {
-	peerA, peerB := net.Pipe()
-	dataA, dataB := net.Pipe()
-	l := corenet.NewMultiListener(corenet.WithListenerReverseConn(peerA, func() (net.Conn, error) {
-		return dataA, nil
-	}, []string{"reverse"}))
-	go func() {
-		conn, err := l.Accept()
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		io.Copy(conn, bufio.NewReader(conn))
-	}()
-
-	if _, err := peerB.Write([]byte{corenet.Dial}); err != nil {
-		t.Fatal(err)
-	}
-	echoLoop(t, dataB)
 }
 
 func TestListenerClose(t *testing.T) {

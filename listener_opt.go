@@ -74,20 +74,6 @@ func WithListener(listener net.Listener, address []string) ListenerAdapter {
 	}
 }
 
-// WithListenerReverseConn returns a listener adapter that can be used for listener behaves like a client.
-func WithListenerReverseConn(conn net.Conn, dialer func() (net.Conn, error), address []string) ListenerAdapter {
-	return &listenerAdapterApplier{
-		applyFn: func(ml *multiListener) {
-			ml.addresses = append(ml.addresses, address...)
-			ml.reverseListeners = append(ml.reverseListeners, &reverseListener{
-				controlConn: conn,
-				dialer:      dialer,
-			})
-		},
-		closeFn: conn.Close,
-	}
-}
-
 // ListenerFallbackOptions specifies the option needed for creating a fallback adapter.
 type ListenerFallbackOptions struct {
 	TLSConfig  *tls.Config
