@@ -508,6 +508,7 @@ func (d *Dialer) GetChannelInfosFromRelay() ([]SessionInfo, error) {
 		resp, err := doClientHandshake(conn, &RelayRequest{Type: Info, Payload: ""})
 		if err != nil {
 			log.Printf("Warning: cannot fetch infos from %s: %v", relayAddress, err)
+			conn.Close()
 			continue
 		}
 		conn.Close()
