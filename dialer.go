@@ -206,19 +206,21 @@ type dialerSession struct {
 	channelName       string
 	allowUpgrade      bool
 	fallbackAddresses []string
+	logError          bool
 
 	mu               sync.Mutex
 	channelAddresses []string
 	session          Session
 }
 
-func newDialerSession(ChannelName string, InitialAddresses, FallbackAddresses []string, AllowUpgrade bool, Dialer func(address, channel string) (Session, error)) *dialerSession {
+func newDialerSession(ChannelName string, InitialAddresses, FallbackAddresses []string, AllowUpgrade bool, LogError bool, Dialer func(address, channel string) (Session, error)) *dialerSession {
 	s := &dialerSession{
 		dialer:            Dialer,
 		channelName:       ChannelName,
 		allowUpgrade:      AllowUpgrade,
 		fallbackAddresses: FallbackAddresses,
 		channelAddresses:  InitialAddresses,
+		logError:          LogError,
 		session:           nil,
 	}
 	if s.channelAddresses == nil {
@@ -261,8 +263,8 @@ func (d *dialerSession) unsafeUpgradeConnection() {
 				if err == nil {
 					needUpdate = strings.Join(d.channelAddresses, ",") != strings.Join(info.Addresses, ",")
 					d.channelAddresses = info.Addresses
-				} else {
-					log.Print(err)
+				} else if d.logError {
+					log.Printf("Failed to create connection for %s: %v", address, err)
 				}
 				if needUpdate {
 					d.unsafeUpgradeConnection()
@@ -475,7 +477,8 @@ func (d *Dialer) Dial(Channel string) (net.Conn, error) {
 	d.mu.Lock()
 	session, exists := d.channelSessions[Channel]
 	if !exists {
-		session = newDialerSession(Channel, d.channelAddresses[Channel], d.fallbackAddress, d.updateChannelAddress, d.createConnection)
+		session = newDialerSession(Channel, d.channelAddresses[Channel], d.fallbackAddress,
+			d.updateChannelAddress, d.logError, d.createConnection)
 		d.channelSessions[Channel] = session
 	}
 	d.mu.Unlock()
@@ -487,7 +490,8 @@ func (d *Dialer) GetSessionID(Channel string) (string, error) {
 	d.mu.Lock()
 	session, exists := d.channelSessions[Channel]
 	if !exists {
-		session = newDialerSession(Channel, d.channelAddresses[Channel], d.fallbackAddress, d.updateChannelAddress, d.createConnection)
+		session = newDialerSession(Channel, d.channelAddresses[Channel],
+			d.fallbackAddress, d.updateChannelAddress, d.logError, d.createConnection)
 		d.channelSessions[Channel] = session
 	}
 	d.mu.Unlock()

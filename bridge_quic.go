@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 
 	"github.com/quic-go/quic-go"
@@ -202,7 +201,6 @@ func newClientQuicBasedSession(dialer func() (net.Conn, error), channel string) 
 
 	sessionInfo, err := getChannelInfo(dialer, channel)
 	if err != nil {
-		log.Printf("Failed to obtain session info for %s: %v", channel, err)
 		sessionInfo = nil
 	}
 	return &clientSession{
