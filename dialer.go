@@ -396,7 +396,11 @@ func (d *Dialer) getRelayDialer(uri *url.URL) (func() (net.Conn, error), error) 
 		}
 		dtlsConfig := convertToDTLSConfig(&TLSConfig)
 		return func() (net.Conn, error) {
-			return dtls.Dial("udp", udpAddr, dtlsConfig)
+			raw, err := dtls.Dial("udp", udpAddr, dtlsConfig)
+			if err != nil {
+				return nil, err
+			}
+			return newBufferedConn(raw), nil
 		}, nil
 	case "quicf":
 		var TLSConfig tls.Config
@@ -524,7 +528,7 @@ func (d *Dialer) GetChannelInfosFromRelay() ([]SessionInfo, error) {
 		if err != nil {
 			continue
 		}
-		resp, err := doClientHandshake(newBufferedConn(conn), &RelayRequest{Type: Info, Payload: ""})
+		resp, err := doClientHandshake(conn, &RelayRequest{Type: Info, Payload: ""})
 		if err != nil {
 			log.Printf("Warning: cannot fetch infos from %s: %v", relayAddress, err)
 			conn.Close()
