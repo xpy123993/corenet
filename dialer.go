@@ -1,6 +1,7 @@
 package corenet
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"log"
@@ -117,11 +118,7 @@ func (s *clientSession) Info() (*SessionInfo, error) {
 	if s.infoFn == nil {
 		return nil, fmt.Errorf("info func unimplemented")
 	}
-	info, err := s.infoFn()
-	if err != nil {
-		s.Close()
-	}
-	return info, err
+	return s.infoFn()
 }
 
 func (s *clientSession) ID() string {
@@ -395,6 +392,9 @@ func (d *Dialer) getRelayDialer(uri *url.URL) (func() (net.Conn, error), error) 
 			TLSConfig.ServerName = uri.Hostname()
 		}
 		dtlsConfig := convertToDTLSConfig(&TLSConfig)
+		dtlsConfig.ConnectContextMaker = func() (context.Context, func()) {
+			return context.WithTimeout(context.Background(), 5*time.Second)
+		}
 		return func() (net.Conn, error) {
 			raw, err := dtls.Dial("udp", udpAddr, dtlsConfig)
 			if err != nil {

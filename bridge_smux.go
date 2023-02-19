@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"time"
 
 	"github.com/xtaci/smux"
 )
@@ -61,6 +62,7 @@ func (p *smuxRelayProtocol) InitChannelSession(Channel string, ListenerConn net.
 				return nil, err
 			}
 			defer stream.Close()
+			stream.SetDeadline(time.Now().Add(3 * time.Second))
 			return getSessionInfo(stream)
 		},
 		isDialerClosed: connSession.IsClosed,
