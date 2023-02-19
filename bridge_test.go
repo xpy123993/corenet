@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pion/dtls/v2"
 	"github.com/xpy123993/corenet"
 )
 
@@ -39,7 +38,7 @@ func listenerDialerRoutine(t *testing.T, relayServerAddr, expectSessionID string
 
 	dialer := corenet.NewDialer([]string{relayServerAddr}, corenet.WithDialerRelayTLSConfig(&tls.Config{
 		InsecureSkipVerify: true,
-	}))
+	}), corenet.WithDialerLogError(true))
 	defer dialer.Close()
 	conn, err := dialer.Dial("test-channel")
 	if err != nil {
@@ -132,7 +131,7 @@ func TestDialerKCPRelayProtocol(t *testing.T) {
 func TestDialerUDFRelayProtocol(t *testing.T) {
 	cert := generateCertificate(t)
 
-	relayListener, err := dtls.Listen("udp", &net.UDPAddr{Port: 0}, &dtls.Config{Certificates: []tls.Certificate{cert}})
+	relayListener, err := corenet.CreateRelayUDPListener(":0", &tls.Config{Certificates: []tls.Certificate{cert}})
 	if err != nil {
 		t.Fatal(err)
 	}

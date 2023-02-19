@@ -6,10 +6,52 @@ import (
 	"io"
 	"log"
 	"net"
+	"time"
 
 	"github.com/pion/dtls/v2"
 	"github.com/xtaci/kcp-go/v5"
+	"github.com/xtaci/smux"
 )
+
+// KCPConfig specifies kcp parameters.
+type KCPConfig struct {
+	MTU          int `default:"1350"`
+	SndWnd       int `default:"2048"`
+	RcvWnd       int `default:"2048"`
+	DataShard    int `default:"10"`
+	ParityShard  int `default:"3"`
+	NoDelay      int `default:"1"`
+	Interval     int `default:"10"`
+	Resend       int `default:"2"`
+	NoCongestion int `default:"1"`
+}
+
+// DefaultKCPConfig returns a default KCP config.
+func DefaultKCPConfig() *KCPConfig {
+	return &KCPConfig{
+		MTU:          1350,
+		SndWnd:       2048,
+		RcvWnd:       2048,
+		DataShard:    10,
+		ParityShard:  3,
+		NoDelay:      1,
+		Interval:     10,
+		Resend:       2,
+		NoCongestion: 1,
+	}
+}
+
+func DefaultSmuxConfig() *smux.Config {
+	return &smux.Config{
+		Version:           1,
+		KeepAliveInterval: 10 * time.Second,
+		KeepAliveDisabled: false,
+		KeepAliveTimeout:  30 * time.Second,
+		MaxFrameSize:      32 << 10,
+		MaxReceiveBuffer:  8 << 20,
+		MaxStreamBuffer:   4 << 20,
+	}
+}
 
 func applyKCPOpts(conn *kcp.UDPSession, config *KCPConfig) {
 	conn.SetStreamMode(true)
@@ -18,19 +60,14 @@ func applyKCPOpts(conn *kcp.UDPSession, config *KCPConfig) {
 	conn.SetWindowSize(config.SndWnd, config.RcvWnd)
 }
 
-// kcpListener is a wrapper to accept kcp connection and apply the corresponding config.
-type kcpListener struct {
-	*kcp.Listener
-	config *KCPConfig
+type hookedListener struct {
+	net.Listener
+	hook func(*hookedListener, net.Conn, error) (net.Conn, error)
 }
 
-func (lis *kcpListener) Accept() (net.Conn, error) {
-	conn, err := lis.AcceptKCP()
-	if err != nil {
-		return nil, err
-	}
-	applyKCPOpts(conn, lis.config)
-	return conn, nil
+func (lis *hookedListener) Accept() (net.Conn, error) {
+	conn, err := lis.Listener.Accept()
+	return lis.hook(lis, conn, err)
 }
 
 // CreateRelayKCPListener creates a KCP listener for the relay service.
@@ -39,7 +76,32 @@ func CreateRelayKCPListener(Addr string, TLSConfig *tls.Config, KCPConfig *KCPCo
 	if err != nil {
 		return nil, err
 	}
-	return tls.NewListener(&kcpListener{lis, KCPConfig}, TLSConfig), nil
+	return tls.NewListener(&hookedListener{Listener: lis, hook: func(hl *hookedListener, c net.Conn, err error) (net.Conn, error) {
+		if err == nil {
+			applyKCPOpts(c.(*kcp.UDPSession), KCPConfig)
+		}
+		return c, err
+	}}, TLSConfig), nil
+}
+
+func CreateRelayUDPListener(Addr string, TLSConfig *tls.Config) (net.Listener, error) {
+	udpAddr, err := net.ResolveUDPAddr("udp", Addr)
+	if err != nil {
+		return nil, err
+	}
+	lis, err := dtls.Listen("udp", udpAddr, convertToDTLSConfig(TLSConfig))
+	if err != nil {
+		return nil, err
+	}
+	return &hookedListener{
+		Listener: lis,
+		hook: func(hl *hookedListener, c net.Conn, err error) (net.Conn, error) {
+			if err == nil {
+				return newBufferedConn(c), nil
+			}
+			return nil, err
+		},
+	}, nil
 }
 
 func createKCPConnection(Addr string, TLSConfig *tls.Config, kcpConfig *KCPConfig) (net.Conn, error) {

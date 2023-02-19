@@ -64,8 +64,6 @@ func UseQuicRelayProtocol() RelayProtocol {
 type quicRelayProtocol struct {
 }
 
-func (p *quicRelayProtocol) ServeChannel() chan serveContext { return nil }
-
 func (p *quicRelayProtocol) InitChannelSession(Channel string, ListenerConn net.Conn) (Session, error) {
 	packetConn, ok := ListenerConn.(*quicConn)
 	if !ok {

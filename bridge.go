@@ -30,9 +30,6 @@ type RelayProtocol interface {
 	InitChannelSession(Channel string, ListenerConn net.Conn) (Session, error)
 	// ExtractIdentity extracts the identity from the connection.
 	ExtractIdentity(Conn net.Conn) (*RelayPeerContext, error)
-	// ServeChannel is the channel where the relay server will redirect serve requests.
-	// Optional, can return nil.
-	ServeChannel() chan serveContext
 }
 
 // RelayServer redirects traffic between client and listener.
@@ -85,11 +82,6 @@ func WithRelayServerUnsecureSkipPeerContextCheck(v bool) RelayServerOption {
 			bs.unsecureSkipPeerContextCheck = v
 		},
 	}
-}
-
-type serveContext struct {
-	conn    net.Conn
-	channel string
 }
 
 // NewRelayServer returns a relay server.
@@ -279,12 +271,7 @@ func (s *RelayServer) serveInfo(conn net.Conn, channel string) error {
 }
 
 func (s *RelayServer) serveConnection(conn net.Conn, protocol RelayProtocol) {
-	closeConnectionAfterExit := true
-	defer func() {
-		if closeConnectionAfterExit {
-			conn.Close()
-		}
-	}()
+	defer conn.Close()
 	req := RelayRequest{}
 	if err := json.NewDecoder(conn).Decode(&req); err != nil {
 		return
@@ -304,11 +291,6 @@ func (s *RelayServer) serveConnection(conn net.Conn, protocol RelayProtocol) {
 			result = s.serveInfoAll(conn)
 		} else {
 			result = s.serveInfo(conn, req.Payload)
-		}
-	case Serve:
-		if protocol.ServeChannel() != nil {
-			protocol.ServeChannel() <- serveContext{conn: conn, channel: req.Payload}
-			closeConnectionAfterExit = false
 		}
 	case Nop:
 		conn.Read(make([]byte, 1))
@@ -353,13 +335,9 @@ func (s *RelayServer) ServeURL(address string, tlsConfig *tls.Config) error {
 		}
 		return s.Serve(tls.NewListener(lis, tlsConfig), UseSmuxRelayProtocol())
 	case "udf":
-		udpAddr, err := net.ResolveUDPAddr("udp", serviceAddress)
+		lis, err := CreateRelayUDPListener(serviceAddress, tlsConfig)
 		if err != nil {
-			return err
-		}
-		lis, err := dtls.Listen("udp", udpAddr, convertToDTLSConfig(tlsConfig))
-		if err != nil {
-			return err
+			return fmt.Errorf("failed to bind %s: %v", serverURL.String(), err)
 		}
 		return s.Serve(lis, UseSmuxRelayProtocol())
 	case "ktf":
@@ -440,5 +418,8 @@ func extractIdentityFromTLSConn(conn net.Conn) (*RelayPeerContext, error) {
 		}
 		return nil, fmt.Errorf("no certificate found from the dtls connection")
 	}
-	return nil, fmt.Errorf("not supported")
+	if wrappedconn, ok := conn.(*bufferedConn); ok {
+		return extractIdentityFromTLSConn(wrappedconn.Conn)
+	}
+	return nil, fmt.Errorf("not supported: cannot extract identity from conn")
 }

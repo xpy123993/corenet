@@ -140,7 +140,11 @@ func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, Opt
 			return nil, err
 		}
 		return CreateSmuxListenerAdapter(func() (net.Conn, error) {
-			return dtls.Dial("udp", udpAddr, convertToDTLSConfig(relayServerTLSConfig))
+			conn, err := dtls.Dial("udp", udpAddr, convertToDTLSConfig(relayServerTLSConfig))
+			if err != nil {
+				return nil, err
+			}
+			return newBufferedConn(conn), nil
 		}, fmt.Sprintf("udf://%s/%s", uri.Host, Channel), Channel)
 	case "quicf":
 		// quic+fallback
