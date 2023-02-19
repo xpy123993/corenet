@@ -41,8 +41,6 @@ type SessionInfo struct {
 type RelayRequest struct {
 	Type    int    `json:"type"`
 	Payload string `json:"payload"`
-
-	DialGetSessionInfo bool `json:"get-sesion-info"`
 }
 
 // RelayResponse specifies a response from a relay server.
