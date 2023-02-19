@@ -3,6 +3,7 @@ module github.com/xpy123993/corenet
 go 1.20
 
 require (
+	github.com/pion/udp/v2 v2.0.1
 	github.com/quic-go/quic-go v0.32.0
 	github.com/xtaci/kcp-go/v5 v5.6.2
 	github.com/xtaci/smux v1.5.19
@@ -11,7 +12,6 @@ require (
 require (
 	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/transport/v2 v2.0.2 // indirect
-	github.com/pion/udp/v2 v2.0.1 // indirect
 )
 
 require (
