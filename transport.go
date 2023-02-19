@@ -1,7 +1,9 @@
 package corenet
 
 import (
+	"bufio"
 	"crypto/tls"
+	"io"
 	"log"
 	"net"
 
@@ -72,4 +74,27 @@ func convertToDTLSConfig(config *tls.Config) *dtls.Config {
 		log.Fatalf("Unexpected client auth type in dtls config: %v", dtlsConfig.ClientAuth)
 	}
 	return dtlsConfig
+}
+
+// bufferedConn is for packet conn to avoid dropping bytes while parsing.
+type bufferedConn struct {
+	net.Conn
+	*bufio.Reader
+}
+
+func newBufferedConn(raw net.Conn) net.Conn {
+	return &bufferedConn{Conn: raw, Reader: bufio.NewReader(raw)}
+}
+
+func (c *bufferedConn) Close() error {
+	c.Reader.Discard(c.Reader.Buffered())
+	return c.Conn.Close()
+}
+
+func (c *bufferedConn) Read(b []byte) (int, error) {
+	return c.Reader.Read(b)
+}
+
+func (c *bufferedConn) WriteTo(writer io.Writer) (int64, error) {
+	return c.Reader.WriteTo(writer)
 }

@@ -353,7 +353,7 @@ func (s *RelayServer) ServeURL(address string, tlsConfig *tls.Config) error {
 		}
 		return s.Serve(tls.NewListener(lis, tlsConfig), UseSmuxRelayProtocol())
 	case "udf":
-		udpAddr, err := net.ResolveUDPAddr("udp", serverURL.Host)
+		udpAddr, err := net.ResolveUDPAddr("udp", serviceAddress)
 		if err != nil {
 			return err
 		}

@@ -1,37 +1,13 @@
 package corenet
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net"
 
 	"github.com/xtaci/smux"
 )
-
-type smuxBufferedConn struct {
-	net.Conn
-	*bufio.Reader
-}
-
-func newBufferedConn(raw net.Conn) net.Conn {
-	return &smuxBufferedConn{Conn: raw, Reader: bufio.NewReader(raw)}
-}
-
-func (c *smuxBufferedConn) Close() error {
-	c.Reader.Discard(c.Reader.Buffered())
-	return c.Conn.Close()
-}
-
-func (c *smuxBufferedConn) Read(b []byte) (int, error) {
-	return c.Reader.Read(b)
-}
-
-func (c *smuxBufferedConn) WriteTo(writer io.Writer) (int64, error) {
-	return c.Reader.WriteTo(writer)
-}
 
 // smuxConnListener is a wrapper to convert a smux.Session as a listener.
 type smuxConnListener struct {

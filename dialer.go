@@ -359,6 +359,9 @@ func NewDialer(FallbackAddress []string, Options ...DialerOption) *Dialer {
 }
 
 func (d *Dialer) getRelayDialer(uri *url.URL) (func() (net.Conn, error), error) {
+	if len(uri.Port()) == 0 {
+		uri.Host = uri.Host + ":13300"
+	}
 	switch uri.Scheme {
 	case "ttf":
 		return func() (net.Conn, error) {
@@ -424,9 +427,6 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 				return nil, fmt.Errorf("address is in direct access blocklist")
 			}
 		}
-	}
-	if len(uri.Port()) == 0 {
-		uri.Host = uri.Host + ":13300"
 	}
 	switch uri.Scheme {
 	case "tcp":
@@ -524,7 +524,7 @@ func (d *Dialer) GetChannelInfosFromRelay() ([]SessionInfo, error) {
 		if err != nil {
 			continue
 		}
-		resp, err := doClientHandshake(conn, &RelayRequest{Type: Info, Payload: ""})
+		resp, err := doClientHandshake(newBufferedConn(conn), &RelayRequest{Type: Info, Payload: ""})
 		if err != nil {
 			log.Printf("Warning: cannot fetch infos from %s: %v", relayAddress, err)
 			conn.Close()
