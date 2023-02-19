@@ -52,7 +52,6 @@ func createKCPConnection(Addr string, TLSConfig *tls.Config, kcpConfig *KCPConfi
 func convertToDTLSConfig(config *tls.Config) *dtls.Config {
 	dtlsConfig := &dtls.Config{
 		Certificates:       config.Certificates,
-		ClientAuth:         dtls.ClientAuthType(config.ClientAuth),
 		InsecureSkipVerify: config.InsecureSkipVerify,
 		RootCAs:            config.RootCAs,
 		ClientCAs:          config.ClientCAs,

@@ -3,6 +3,7 @@ package corenet
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -428,6 +429,16 @@ func extractIdentityFromTLSConn(conn net.Conn) (*RelayPeerContext, error) {
 			return &RelayPeerContext{Name: tlsConn.ConnectionState().PeerCertificates[0].Subject.CommonName}, nil
 		}
 		return nil, fmt.Errorf("no certificate found from the tls connection")
+	}
+	if tlsConn, ok := conn.(*dtls.Conn); ok {
+		if len(tlsConn.ConnectionState().PeerCertificates) > 0 {
+			cert, err := x509.ParseCertificate(tlsConn.ConnectionState().PeerCertificates[0])
+			if err != nil {
+				return nil, err
+			}
+			return &RelayPeerContext{Name: cert.Subject.CommonName}, nil
+		}
+		return nil, fmt.Errorf("no certificate found from the dtls connection")
 	}
 	return nil, fmt.Errorf("not supported")
 }

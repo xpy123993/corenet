@@ -17,7 +17,7 @@ type smuxBufferedConn struct {
 }
 
 func newBufferedConn(raw net.Conn) net.Conn {
-	return &smuxBufferedConn{Conn: raw, Reader: bufio.NewReader(raw)}
+	return &smuxBufferedConn{Conn: raw, Reader: bufio.NewReaderSize(raw, 64<<20)}
 }
 
 func (c *smuxBufferedConn) Read(b []byte) (int, error) {

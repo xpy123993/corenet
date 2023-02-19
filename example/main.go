@@ -19,27 +19,26 @@ var (
 	message = flag.String("message", "hello world", "In client mode, the message sent to the server.")
 )
 
-func serveRelay() error {
-	cert, _ := selfsign.GenerateSelfSigned()
+func serveRelay(cert tls.Certificate) error {
 	server := corenet.NewRelayServer(
 		corenet.WithRelayServerForceEvictChannelSession(true),
 		corenet.WithRelayServerLogError(true),
-		corenet.WithRelayServerUnsecureSkipPeerContextCheck(true),
 	)
-	return server.ServeURL(*relayServerURL, &tls.Config{Certificates: []tls.Certificate{cert}})
+	return server.ServeURL(*relayServerURL, &tls.Config{Certificates: []tls.Certificate{cert}, ClientAuth: tls.RequestClientCert})
 }
 
 func main() {
 	flag.Parse()
-
+	cert, _ := selfsign.GenerateSelfSigned()
 	switch *mode {
 	case "relay":
-		if err := serveRelay(); err != nil {
+		if err := serveRelay(cert); err != nil {
 			log.Printf("Relay server returns error: %v", err)
 		}
 	case "server":
 		relayAdapter, err := corenet.CreateListenerFallbackURLAdapter(*relayServerURL, *channel, &corenet.ListenerFallbackOptions{TLSConfig: &tls.Config{
 			InsecureSkipVerify: true,
+			Certificates:       []tls.Certificate{cert},
 		}})
 		if err != nil {
 			log.Fatal(err)
@@ -55,7 +54,10 @@ func main() {
 			go io.Copy(conn, conn)
 		}
 	case "client":
-		dialer := corenet.NewDialer([]string{*relayServerURL}, corenet.WithDialerRelayTLSConfig(&tls.Config{InsecureSkipVerify: true}), corenet.WithDialerUpdateChannelInterval(100*time.Millisecond))
+		dialer := corenet.NewDialer([]string{*relayServerURL}, corenet.WithDialerRelayTLSConfig(&tls.Config{
+			InsecureSkipVerify: true,
+			Certificates:       []tls.Certificate{cert},
+		}), corenet.WithDialerUpdateChannelInterval(100*time.Millisecond))
 		conn, err := dialer.Dial(*channel)
 		if err != nil {
 			log.Printf("client dial failed: %v", err)
