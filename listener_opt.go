@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pion/dtls/v2"
+	"github.com/pion/udp/v2"
 	"github.com/quic-go/quic-go"
 )
 
@@ -155,20 +156,41 @@ func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, Opt
 	}
 }
 
+func generateDirectAccessAddresses(protocol string, port int) ([]string, error) {
+	addresses, err := getAllAccessibleIPs()
+	if err != nil {
+		return nil, err
+	}
+	addressWithProtocol := make([]string, 0, len(addresses))
+	for _, address := range addresses {
+		addressWithProtocol = append(addressWithProtocol, fmt.Sprintf("%s://%s:%d", protocol, address, port))
+	}
+	return addressWithProtocol, nil
+}
+
 // CreateListenerTCPPortAdapter creates a listener adapter listening on local port `port`.
 func CreateListenerTCPPortAdapter(port int) (ListenerAdapter, error) {
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return nil, err
 	}
-	addresses, err := getAllAccessibleIPs()
+	addresses, err := generateDirectAccessAddresses("tcp", lis.Addr().(*net.TCPAddr).Port)
+	if err != nil {
+		lis.Close()
+		return nil, err
+	}
+	return WithListener(lis, addresses), nil
+}
+
+func CreateListenerUDPPortAdapter(port int) (ListenerAdapter, error) {
+	lis, err := udp.Listen("udp", &net.UDPAddr{Port: port})
 	if err != nil {
 		return nil, err
 	}
-	openPort := lis.Addr().(*net.TCPAddr).Port
-	addressWithProtocol := make([]string, 0, len(addresses))
-	for _, address := range addresses {
-		addressWithProtocol = append(addressWithProtocol, fmt.Sprintf("tcp://%s:%d", address, openPort))
+	addresses, err := generateDirectAccessAddresses("udp", lis.Addr().(*net.UDPAddr).Port)
+	if err != nil {
+		lis.Close()
+		return nil, err
 	}
-	return WithListener(lis, addressWithProtocol), nil
+	return WithListener(lis, addresses), nil
 }

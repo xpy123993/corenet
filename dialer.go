@@ -143,8 +143,8 @@ func parseSessionID(URI string) (string, error) {
 	return sessionURL.String(), nil
 }
 
-func newClientTCPSession(address string) (Session, error) {
-	conn, err := net.DialTimeout("tcp", address, 3*time.Second)
+func newClientDirectSession(network, address string) (Session, error) {
+	conn, err := net.DialTimeout(network, address, 3*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +158,7 @@ func newClientTCPSession(address string) (Session, error) {
 	trackerConns := make([]net.Conn, 0)
 	session := clientSession{
 		dialer: func() (net.Conn, error) {
-			conn, err := net.DialTimeout("tcp", address, 3*time.Second)
+			conn, err := net.DialTimeout(network, address, 3*time.Second)
 			if err != nil {
 				return nil, err
 			}
@@ -171,7 +171,7 @@ func newClientTCPSession(address string) (Session, error) {
 			return clientConn, nil
 		},
 		infoFn: func() (*SessionInfo, error) {
-			conn, err := net.DialTimeout("tcp", address, 3*time.Second)
+			conn, err := net.DialTimeout(network, address, 3*time.Second)
 			if err != nil {
 				return nil, err
 			}
@@ -437,8 +437,8 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 		}
 	}
 	switch uri.Scheme {
-	case "tcp":
-		return newClientTCPSession(uri.Host)
+	case "tcp", "udp":
+		return newClientDirectSession(uri.Scheme, uri.Host)
 	case "ttf", "ktf", "udf":
 		dialer, err := d.getRelayDialer(uri)
 		if err != nil {
