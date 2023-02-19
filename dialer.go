@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pion/dtls/v2"
 	"github.com/quic-go/quic-go"
 )
 
@@ -263,6 +264,8 @@ func (d *dialerSession) unsafeUpgradeConnection() {
 				if err == nil {
 					needUpdate = strings.Join(d.channelAddresses, ",") != strings.Join(info.Addresses, ",")
 					d.channelAddresses = info.Addresses
+				} else {
+					log.Print(err)
 				}
 				if needUpdate {
 					d.unsafeUpgradeConnection()
@@ -376,6 +379,22 @@ func (d *Dialer) getRelayDialer(uri *url.URL) (func() (net.Conn, error), error) 
 		return func() (net.Conn, error) {
 			return createKCPConnection(uri.Host, &TLSConfig, kcpConfig)
 		}, nil
+	case "udf":
+		udpAddr, err := net.ResolveUDPAddr("udp", uri.Host)
+		if err != nil {
+			return nil, err
+		}
+		var TLSConfig tls.Config
+		if d.tlsConfig != nil {
+			TLSConfig = *d.tlsConfig
+		}
+		if len(TLSConfig.ServerName) == 0 {
+			TLSConfig.ServerName = uri.Hostname()
+		}
+		dtlsConfig := convertToDTLSConfig(&TLSConfig)
+		return func() (net.Conn, error) {
+			return dtls.Dial("udp", udpAddr, dtlsConfig)
+		}, nil
 	case "quicf":
 		var TLSConfig tls.Config
 		if d.tlsConfig != nil {
@@ -412,7 +431,7 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 	switch uri.Scheme {
 	case "tcp":
 		return newClientTCPSession(uri.Host)
-	case "ttf", "ktf":
+	case "ttf", "ktf", "udf":
 		dialer, err := d.getRelayDialer(uri)
 		if err != nil {
 			return nil, err

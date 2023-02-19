@@ -1,13 +1,32 @@
 package corenet
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 
 	"github.com/xtaci/smux"
 )
+
+type smuxBufferedConn struct {
+	net.Conn
+	*bufio.Reader
+}
+
+func newBufferedConn(raw net.Conn) net.Conn {
+	return &smuxBufferedConn{Conn: raw, Reader: bufio.NewReader(raw)}
+}
+
+func (c *smuxBufferedConn) Read(b []byte) (int, error) {
+	return c.Reader.Read(b)
+}
+
+func (c *smuxBufferedConn) WriteTo(writer io.Writer) (int64, error) {
+	return c.Reader.WriteTo(writer)
+}
 
 // smuxConnListener is a wrapper to convert a smux.Session as a listener.
 type smuxConnListener struct {
@@ -37,7 +56,7 @@ func (p *smuxRelayProtocol) ExtractIdentity(Conn net.Conn) (*RelayPeerContext, e
 }
 
 func (p *smuxRelayProtocol) InitChannelSession(Channel string, ListenerConn net.Conn) (Session, error) {
-	connSession, err := smux.Client(ListenerConn, nil)
+	connSession, err := smux.Client(newBufferedConn(ListenerConn), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +89,7 @@ func (p *smuxRelayProtocol) InitChannelSession(Channel string, ListenerConn net.
 }
 
 func (p *smuxRelayProtocol) InitClientSession(ClientConn net.Conn) (Session, error) {
-	connSession, err := smux.Server(ClientConn, nil)
+	connSession, err := smux.Server(newBufferedConn(ClientConn), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +122,7 @@ func CreateSmuxListenerAdapter(dialer func() (net.Conn, error), url, channel str
 		conn.Close()
 		return nil, err
 	}
-	server, err := smux.Server(conn, nil)
+	server, err := smux.Server(newBufferedConn(conn), nil)
 	if err != nil {
 		conn.Close()
 		return nil, err
@@ -139,7 +158,7 @@ func newSmuxClientSession(dialer func() (net.Conn, error), channel string) (Sess
 		return nil, err
 	}
 
-	connSession, err := smux.Client(conn, nil)
+	connSession, err := smux.Client(newBufferedConn(conn), nil)
 	if err != nil {
 		conn.Close()
 		return nil, err

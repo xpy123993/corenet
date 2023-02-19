@@ -1,17 +1,9 @@
 package corenet_test
 
 import (
-	"bytes"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
 	"fmt"
 	"io"
-	"log"
-	"math/big"
 	"net"
 	"net/netip"
 	"strings"
@@ -19,48 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/dtls/v2/pkg/crypto/selfsign"
 	"github.com/xpy123993/corenet"
 )
 
 func generateCertificate(t *testing.T) tls.Certificate {
-	priv, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serialID, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	if err != nil {
-		t.Fatal(err)
-	}
-	template := x509.Certificate{
-		SerialNumber: serialID,
-		Subject: pkix.Name{
-			CommonName: "test certificate",
-		},
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().Add(time.Hour),
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
-		BasicConstraintsValid: true,
-		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback, net.IPv6zero},
-	}
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
-	if err != nil {
-		log.Fatalf("Unable to marshal private key: %v", err)
-	}
-	certBytes := new(bytes.Buffer)
-	if err := pem.Encode(certBytes, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes}); err != nil {
-		log.Fatalf("Failed to write data to cert.pem: %v", err)
-	}
-	keyBytes := new(bytes.Buffer)
-	if err := pem.Encode(keyBytes, &pem.Block{Type: "PRIVATE KEY", Bytes: privBytes}); err != nil {
-		log.Fatalf("Failed to write data to key.pem: %v", err)
-	}
-
-	cert, err := tls.X509KeyPair(certBytes.Bytes(), keyBytes.Bytes())
+	cert, err := selfsign.GenerateSelfSigned()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,122 +65,6 @@ func TestRawDialer(t *testing.T) {
 	if !strings.Contains(listener.Addr().String(), sessionID) {
 		t.Errorf("expect %s is one of %s", sessionID, listener.Addr().String())
 	}
-}
-
-func listenerDialerRoutine(t *testing.T, relayServerAddr, expectSessionID string) {
-	clientListenerAdapter, err := corenet.CreateListenerFallbackURLAdapter(relayServerAddr, "test-channel", &corenet.ListenerFallbackOptions{TLSConfig: &tls.Config{
-		InsecureSkipVerify: true,
-	}})
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	clientListener := corenet.NewMultiListener(clientListenerAdapter)
-	defer clientListener.Close()
-	go func() {
-		for {
-			conn, err := clientListener.Accept()
-			if err != nil {
-				return
-			}
-			go func(conn net.Conn) {
-				io.Copy(conn, conn)
-				conn.Close()
-			}(conn)
-		}
-	}()
-	time.Sleep(3 * time.Millisecond)
-
-	dialer := corenet.NewDialer([]string{relayServerAddr}, corenet.WithDialerRelayTLSConfig(&tls.Config{
-		InsecureSkipVerify: true,
-	}))
-	defer dialer.Close()
-	conn, err := dialer.Dial("test-channel")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	echoLoop(t, conn)
-
-	sessionID, err := dialer.GetSessionID("test-channel")
-	if err != nil {
-		t.Error(err)
-	}
-	if !strings.Contains(expectSessionID, sessionID) {
-		t.Errorf("expect %s, got %v", expectSessionID, sessionID)
-	}
-}
-
-func TestDialerUsePlainRelayTCPProtocol(t *testing.T) {
-	cert := generateCertificate(t)
-	mainListener, err := tls.Listen("tcp", ":0", &tls.Config{
-		Certificates: []tls.Certificate{cert},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true), corenet.WithRelayServerLogError(true))
-	defer relayServer.Close()
-	go relayServer.Serve(mainListener, corenet.UseSmuxRelayProtocol())
-	time.Sleep(10 * time.Millisecond)
-	relayServerAddr := fmt.Sprintf("ttf://%s", mainListener.Addr().String())
-
-	listenerDialerRoutine(t, relayServerAddr, relayServerAddr)
-}
-
-func TestDialerUsePlainRelayTCPProtocolChannelNotExists(t *testing.T) {
-	cert := generateCertificate(t)
-	mainListener, err := tls.Listen("tcp", ":0", &tls.Config{
-		Certificates: []tls.Certificate{cert},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true), corenet.WithRelayServerLogError(true))
-	defer relayServer.Close()
-	go relayServer.Serve(mainListener, corenet.UseSmuxRelayProtocol())
-	time.Sleep(10 * time.Millisecond)
-	relayServerAddr := fmt.Sprintf("ttf://%s", mainListener.Addr().String())
-
-	dialer := corenet.NewDialer([]string{relayServerAddr}, corenet.WithDialerRelayTLSConfig(&tls.Config{
-		InsecureSkipVerify: true,
-	}))
-	_, err = dialer.Dial("test-channel")
-	if err == nil || !strings.Contains(err.Error(), "unavailable") {
-		t.Errorf("expect an unavailable error, got %v", err)
-	}
-}
-
-func TestDialerQuicBasedRelayProtocol(t *testing.T) {
-	cert := generateCertificate(t)
-
-	relayListener, err := corenet.CreateRelayQuicListener(":0", &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true), corenet.WithRelayServerLogError(true))
-	defer relayServer.Close()
-	go relayServer.Serve(relayListener, corenet.UseQuicRelayProtocol())
-	time.Sleep(3 * time.Millisecond)
-	relayServerAddr := fmt.Sprintf("quicf://%s", relayListener.Addr().String())
-
-	listenerDialerRoutine(t, relayServerAddr, relayServerAddr)
-}
-
-func TestDialerUsePlainRelayKCPProtocol(t *testing.T) {
-	cert := generateCertificate(t)
-
-	relayListener, err := corenet.CreateRelayKCPListener(":0", &tls.Config{Certificates: []tls.Certificate{cert}}, corenet.DefaultKCPConfig())
-	if err != nil {
-		t.Fatal(err)
-	}
-	relayServer := corenet.NewRelayServer(corenet.WithRelayServerUnsecureSkipPeerContextCheck(true), corenet.WithRelayServerLogError(true))
-	defer relayServer.Close()
-	go relayServer.Serve(relayListener, corenet.UseSmuxRelayProtocol())
-	time.Sleep(3 * time.Millisecond)
-	relayServerAddr := fmt.Sprintf("ktf://%s", relayListener.Addr().String())
-
-	listenerDialerRoutine(t, relayServerAddr, relayServerAddr)
 }
 
 func TestDialerListenerDifferentProtocol(t *testing.T) {

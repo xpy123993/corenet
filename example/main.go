@@ -1,22 +1,13 @@
 package main
 
 import (
-	"bytes"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
 	"flag"
-	"fmt"
 	"io"
 	"log"
-	"math/big"
-	"net"
-	"net/url"
 	"time"
 
+	"github.com/pion/dtls/v2/pkg/crypto/selfsign"
 	"github.com/xpy123993/corenet"
 )
 
@@ -28,75 +19,14 @@ var (
 	message = flag.String("message", "hello world", "In client mode, the message sent to the server.")
 )
 
-func generateCertificate() tls.Certificate {
-	priv, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		log.Fatal(err)
-	}
-	serialID, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	if err != nil {
-		log.Fatal(err)
-	}
-	template := x509.Certificate{
-		SerialNumber: serialID,
-		Subject: pkix.Name{
-			CommonName: "Self-signed relay certificate",
-		},
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().Add(time.Hour),
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
-		BasicConstraintsValid: true,
-		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback, net.IPv6zero},
-	}
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
-	if err != nil {
-		log.Fatal(err)
-	}
-	privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
-	if err != nil {
-		log.Fatalf("Unable to marshal private key: %v", err)
-	}
-	certBytes := new(bytes.Buffer)
-	if err := pem.Encode(certBytes, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes}); err != nil {
-		log.Fatalf("Failed to write data to cert.pem: %v", err)
-	}
-	keyBytes := new(bytes.Buffer)
-	if err := pem.Encode(keyBytes, &pem.Block{Type: "PRIVATE KEY", Bytes: privBytes}); err != nil {
-		log.Fatalf("Failed to write data to key.pem: %v", err)
-	}
-
-	cert, err := tls.X509KeyPair(certBytes.Bytes(), keyBytes.Bytes())
-	if err != nil {
-		log.Fatal(err)
-	}
-	return cert
-}
-
 func serveRelay() error {
-	serverURL, err := url.Parse(*relayServerURL)
-	if err != nil {
-		log.Fatal(err)
-	}
-	cert := generateCertificate()
-	switch serverURL.Scheme {
-	case "ttf":
-		mainLis, err := tls.Listen("tcp", serverURL.Host, &tls.Config{Certificates: []tls.Certificate{cert}})
-		if err != nil {
-			log.Fatal(err)
-		}
-		server := corenet.NewRelayServer(corenet.WithRelayServerForceEvictChannelSession(true))
-		return server.Serve(mainLis, corenet.UseSmuxRelayProtocol())
-	case "quicf":
-		lis, err := corenet.CreateRelayQuicListener(serverURL.Host, &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"quicf"}}, nil)
-		if err != nil {
-			return err
-		}
-		server := corenet.NewRelayServer(corenet.WithRelayServerForceEvictChannelSession(true))
-		return server.Serve(lis, corenet.UseQuicRelayProtocol())
-	default:
-		return fmt.Errorf("unknown protocol: %s", serverURL.Scheme)
-	}
+	cert, _ := selfsign.GenerateSelfSigned()
+	server := corenet.NewRelayServer(
+		corenet.WithRelayServerForceEvictChannelSession(true),
+		corenet.WithRelayServerLogError(true),
+		corenet.WithRelayServerUnsecureSkipPeerContextCheck(true),
+	)
+	return server.ServeURL(*relayServerURL, &tls.Config{Certificates: []tls.Certificate{cert}})
 }
 
 func main() {
@@ -114,11 +44,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		directAdapter, err := corenet.CreateListenerTCPPortAdapter(0)
-		if err != nil {
-			log.Fatal(err)
-		}
-		listener := corenet.NewMultiListener(directAdapter, relayAdapter)
+		listener := corenet.NewMultiListener(relayAdapter)
 		defer listener.Close()
 		for {
 			conn, err := listener.Accept()

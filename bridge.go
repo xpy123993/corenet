@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pion/dtls/v2"
 	"github.com/quic-go/quic-go"
 )
 
@@ -350,6 +351,16 @@ func (s *RelayServer) ServeURL(address string, tlsConfig *tls.Config) error {
 			return fmt.Errorf("failed to bind %s: %v", serverURL.String(), err)
 		}
 		return s.Serve(tls.NewListener(lis, tlsConfig), UseSmuxRelayProtocol())
+	case "udf":
+		udpAddr, err := net.ResolveUDPAddr("udp", serverURL.Host)
+		if err != nil {
+			return err
+		}
+		lis, err := dtls.Listen("udp", udpAddr, convertToDTLSConfig(tlsConfig))
+		if err != nil {
+			return err
+		}
+		return s.Serve(lis, UseSmuxRelayProtocol())
 	case "ktf":
 		relayServerListener, err := CreateRelayKCPListener(serviceAddress, tlsConfig, DefaultKCPConfig())
 		if err != nil {

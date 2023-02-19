@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/pion/dtls/v2"
 	"github.com/quic-go/quic-go"
 )
 
@@ -133,6 +134,14 @@ func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, Opt
 			return createKCPConnection(uri.Host, relayServerTLSConfig, kcpConfig)
 		}
 		return CreateSmuxListenerAdapter(dialer, fmt.Sprintf("ktf://%s/%s", uri.Host, Channel), Channel)
+	case "udf":
+		udpAddr, err := net.ResolveUDPAddr("udp", uri.Host)
+		if err != nil {
+			return nil, err
+		}
+		return CreateSmuxListenerAdapter(func() (net.Conn, error) {
+			return dtls.Dial("udp", udpAddr, convertToDTLSConfig(relayServerTLSConfig))
+		}, fmt.Sprintf("udf://%s/%s", uri.Host, Channel), Channel)
 	case "quicf":
 		// quic+fallback
 		relayServerTLSConfig.NextProtos = append(Options.TLSConfig.NextProtos, "quicf")

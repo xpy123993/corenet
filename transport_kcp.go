@@ -2,8 +2,10 @@ package corenet
 
 import (
 	"crypto/tls"
+	"log"
 	"net"
 
+	"github.com/pion/dtls/v2"
 	"github.com/xtaci/kcp-go/v5"
 )
 
@@ -45,4 +47,30 @@ func createKCPConnection(Addr string, TLSConfig *tls.Config, kcpConfig *KCPConfi
 	}
 	applyKCPOpts(conn, kcpConfig)
 	return tls.Client(conn, TLSConfig), nil
+}
+
+func convertToDTLSConfig(config *tls.Config) *dtls.Config {
+	dtlsConfig := &dtls.Config{
+		Certificates:       config.Certificates,
+		ClientAuth:         dtls.ClientAuthType(config.ClientAuth),
+		InsecureSkipVerify: config.InsecureSkipVerify,
+		RootCAs:            config.RootCAs,
+		ClientCAs:          config.ClientCAs,
+		ServerName:         config.ServerName,
+	}
+	switch config.ClientAuth {
+	case tls.NoClientCert:
+		dtlsConfig.ClientAuth = dtls.NoClientCert
+	case tls.RequestClientCert:
+		dtlsConfig.ClientAuth = dtls.RequestClientCert
+	case tls.RequireAndVerifyClientCert:
+		dtlsConfig.ClientAuth = dtls.RequireAndVerifyClientCert
+	case tls.RequireAnyClientCert:
+		dtlsConfig.ClientAuth = dtls.RequireAnyClientCert
+	case tls.VerifyClientCertIfGiven:
+		dtlsConfig.ClientAuth = dtls.VerifyClientCertIfGiven
+	default:
+		log.Fatalf("Unexpected client auth type in dtls config: %v", dtlsConfig.ClientAuth)
+	}
+	return dtlsConfig
 }
