@@ -333,6 +333,15 @@ func TestDialerUpgradeSession(t *testing.T) {
 	if !strings.HasPrefix(sessionID, "tcp://") {
 		t.Errorf("expect %s to be tcp connection", sessionID)
 	}
+
+	channelInfos, err := dialer.GetChannelInfosFromRelay()
+	if err != nil {
+		t.Error(err)
+	}
+	if len(channelInfos) != 1 {
+		t.Errorf("expect 1 channel record, got: %v", channelInfos)
+	}
+
 	wg.Wait()
 }
 

@@ -111,7 +111,7 @@ func CreateSmuxListenerAdapter(dialer func() (net.Conn, error), url, channel str
 	return WithListener(&smuxConnListener{server}, []string{url}), nil
 }
 
-func getSmuxChannelInfo(dialer func() (net.Conn, error), channel string) (*SessionInfo, error) {
+func getChannelInfo(dialer func() (net.Conn, error), channel string) (*SessionInfo, error) {
 	conn, err := dialer()
 	if err != nil {
 		return nil, err
@@ -122,7 +122,10 @@ func getSmuxChannelInfo(dialer func() (net.Conn, error), channel string) (*Sessi
 	if err != nil {
 		return nil, err
 	}
-	return &resp.SessionInfo, nil
+	if len(resp.SessionInfo) == 0 {
+		return nil, fmt.Errorf("no available session info")
+	}
+	return &resp.SessionInfo[0], nil
 }
 
 func newSmuxClientSession(dialer func() (net.Conn, error), channel string) (Session, error) {
@@ -142,7 +145,7 @@ func newSmuxClientSession(dialer func() (net.Conn, error), channel string) (Sess
 		return nil, err
 	}
 
-	sessionInfo, err := getSmuxChannelInfo(dialer, channel)
+	sessionInfo, err := getChannelInfo(dialer, channel)
 	if err != nil {
 		log.Printf("Failed to obtain session info for %s: %v", channel, err)
 		sessionInfo = nil

@@ -3,6 +3,7 @@ package corenet
 import (
 	"crypto/tls"
 	"fmt"
+	"log"
 	"net"
 	"net/netip"
 	"net/url"
@@ -354,6 +355,40 @@ func NewDialer(FallbackAddress []string, Options ...DialerOption) *Dialer {
 	return &dialer
 }
 
+func (d *Dialer) getRelayDialer(uri *url.URL) (func() (net.Conn, error), error) {
+	switch uri.Scheme {
+	case "ttf":
+		return func() (net.Conn, error) {
+			return tls.Dial("tcp", uri.Host, d.tlsConfig)
+		}, nil
+	case "ktf":
+		var TLSConfig tls.Config
+		if d.tlsConfig != nil {
+			TLSConfig = *d.tlsConfig
+		}
+		kcpConfig := d.kcpConfig
+		if kcpConfig == nil {
+			kcpConfig = DefaultKCPConfig()
+		}
+		if len(TLSConfig.ServerName) == 0 {
+			TLSConfig.ServerName = uri.Hostname()
+		}
+		return func() (net.Conn, error) {
+			return createKCPConnection(uri.Host, &TLSConfig, kcpConfig)
+		}, nil
+	case "quicf":
+		var TLSConfig tls.Config
+		if d.tlsConfig != nil {
+			TLSConfig = *d.tlsConfig
+		}
+		TLSConfig.NextProtos = append(TLSConfig.NextProtos, "quicf")
+		return func() (net.Conn, error) {
+			return quicDialer(uri.Host, &TLSConfig, d.quicConfig)
+		}, nil
+	}
+	return nil, fmt.Errorf("unknown protocol: %s", uri.String())
+}
+
 // createConnection is lock-free.
 func (d *Dialer) createConnection(address string, channel string) (Session, error) {
 	if blocked, exists := d.connectionAddressBlocklist[address]; exists && blocked {
@@ -377,33 +412,18 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 	switch uri.Scheme {
 	case "tcp":
 		return newClientTCPSession(uri.Host)
-	case "ttf":
-		return newSmuxClientSession(func() (net.Conn, error) {
-			return tls.Dial("tcp", uri.Host, d.tlsConfig)
-		}, channel)
-	case "ktf":
-		var TLSConfig tls.Config
-		if d.tlsConfig != nil {
-			TLSConfig = *d.tlsConfig
-		}
-		kcpConfig := d.kcpConfig
-		if kcpConfig == nil {
-			kcpConfig = DefaultKCPConfig()
-		}
-		if len(TLSConfig.ServerName) == 0 {
-			TLSConfig.ServerName = uri.Hostname()
-		}
-		dialer := func() (net.Conn, error) {
-			return createKCPConnection(uri.Host, &TLSConfig, kcpConfig)
+	case "ttf", "ktf":
+		dialer, err := d.getRelayDialer(uri)
+		if err != nil {
+			return nil, err
 		}
 		return newSmuxClientSession(dialer, channel)
 	case "quicf":
-		var TLSConfig tls.Config
-		if d.tlsConfig != nil {
-			TLSConfig = *d.tlsConfig
+		dialer, err := d.getRelayDialer(uri)
+		if err != nil {
+			return nil, err
 		}
-		TLSConfig.NextProtos = append(TLSConfig.NextProtos, "quicf")
-		return newClientQuicBasedSession(uri.Host, channel, &TLSConfig, d.quicConfig)
+		return newClientQuicBasedSession(dialer, channel)
 	}
 	return nil, fmt.Errorf("unknown protocol: %s", address)
 }
@@ -439,15 +459,6 @@ func (d *Dialer) Dial(Channel string) (net.Conn, error) {
 	return session.Dial()
 }
 
-func (d *Dialer) CloseSession(Channel string) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if session, exists := d.channelSessions[Channel]; exists {
-		session.Close()
-		delete(d.channelSessions, Channel)
-	}
-}
-
 // GetSessionID returns the session information of the channel.
 func (d *Dialer) GetSessionID(Channel string) (string, error) {
 	d.mu.Lock()
@@ -473,4 +484,34 @@ func (d *Dialer) Close() error {
 		session.Close()
 	}
 	return nil
+}
+
+// Returns all channel infos from the relay server registered in this dialer as fallback addresses.
+func (d *Dialer) GetChannelInfosFromRelay() ([]SessionInfo, error) {
+	d.mu.Lock()
+	relayAddresses := d.fallbackAddress
+	d.mu.Unlock()
+	sessionInfos := []SessionInfo{}
+	for _, relayAddress := range relayAddresses {
+		relayURL, err := url.Parse(relayAddress)
+		if err != nil {
+			continue
+		}
+		dialer, err := d.getRelayDialer(relayURL)
+		if err != nil {
+			continue
+		}
+		conn, err := dialer()
+		if err != nil {
+			continue
+		}
+		resp, err := doClientHandshake(conn, &RelayRequest{Type: Info, Payload: ""})
+		if err != nil {
+			log.Printf("Warning: cannot fetch infos from %s: %v", relayAddress, err)
+			continue
+		}
+		conn.Close()
+		sessionInfos = append(sessionInfos, resp.SessionInfo...)
+	}
+	return sessionInfos, nil
 }

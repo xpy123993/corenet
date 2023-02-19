@@ -34,6 +34,7 @@ func GetCommandName(Type int) string {
 
 // SessionInfo stores all the available addresses of a session.
 type SessionInfo struct {
+	Channel   string
 	Addresses []string `json:"addresses"`
 }
 
@@ -48,7 +49,7 @@ type RelayResponse struct {
 	Success bool   `json:"success"`
 	Payload string `json:"payload"`
 
-	SessionInfo SessionInfo `json:"session-info"`
+	SessionInfo []SessionInfo `json:"session-info"`
 }
 
 // KCPConfig specifies kcp parameters.

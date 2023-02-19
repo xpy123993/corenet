@@ -239,6 +239,25 @@ func (s *RelayServer) serveDial(conn net.Conn, req *RelayRequest, protocol Relay
 	}
 }
 
+func (s *RelayServer) serveInfoAll(conn net.Conn) error {
+	resp := RelayResponse{Success: true}
+	s.mu.RLock()
+	for channelName, channel := range s.routeTable {
+		sessionInfo, err := channel.Info()
+		if err == nil {
+			sessionInfo.Channel = channelName
+			resp.SessionInfo = append(resp.SessionInfo, *sessionInfo)
+		} else {
+			resp.SessionInfo = append(resp.SessionInfo, SessionInfo{Channel: channelName})
+		}
+	}
+	s.mu.RUnlock()
+	if err := json.NewEncoder(conn).Encode(resp); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *RelayServer) serveInfo(conn net.Conn, channel string) error {
 	channelSession := s.lookupChannel(channel)
 	if channelSession == nil {
@@ -248,7 +267,8 @@ func (s *RelayServer) serveInfo(conn net.Conn, channel string) error {
 	resp := RelayResponse{Success: true}
 	sessionInfo, err := channelSession.Info()
 	if err == nil {
-		resp.SessionInfo = *sessionInfo
+		sessionInfo.Channel = channel
+		resp.SessionInfo = []SessionInfo{*sessionInfo}
 	}
 	if err := json.NewEncoder(conn).Encode(resp); err != nil {
 		return err
@@ -278,7 +298,11 @@ func (s *RelayServer) serveConnection(conn net.Conn, protocol RelayProtocol) {
 	case Dial:
 		result = s.serveDial(conn, &req, protocol)
 	case Info:
-		result = s.serveInfo(conn, req.Payload)
+		if len(req.Payload) == 0 {
+			result = s.serveInfoAll(conn)
+		} else {
+			result = s.serveInfo(conn, req.Payload)
+		}
 	case Serve:
 		if protocol.ServeChannel() != nil {
 			protocol.ServeChannel() <- serveContext{conn: conn, channel: req.Payload}

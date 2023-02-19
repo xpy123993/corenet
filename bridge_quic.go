@@ -171,29 +171,7 @@ func newQuicListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, QuicCon
 	return WithListener(&quicConnListener{conn}, []string{fmt.Sprintf("quicf://%s/%s", Addr, Channel)}), nil
 }
 
-func getQuicChannelInfo(address, channel string, tlsConfig *tls.Config, quicConfig *quic.Config) (*SessionInfo, error) {
-	packetConn, err := quic.DialAddr(address, tlsConfig, quicConfig)
-	if err != nil {
-		return nil, err
-	}
-	defer packetConn.CloseWithError(0, "")
-
-	stream, err := packetConn.OpenStream()
-	if err != nil {
-		packetConn.CloseWithError(1, err.Error())
-		return nil, err
-	}
-	conn := &quicConn{Stream: stream, Connection: packetConn}
-	defer conn.Close()
-
-	resp, err := doClientHandshake(conn, &RelayRequest{Type: Info, Payload: channel})
-	if err != nil {
-		return nil, err
-	}
-	return &resp.SessionInfo, nil
-}
-
-func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config, quicConfig *quic.Config) (Session, error) {
+func quicDialer(address string, tlsConfig *tls.Config, quicConfig *quic.Config) (*quicConn, error) {
 	conn, err := quic.DialAddr(address, tlsConfig, quicConfig)
 	if err != nil {
 		return nil, err
@@ -203,13 +181,26 @@ func newClientQuicBasedSession(address, channel string, tlsConfig *tls.Config, q
 		conn.CloseWithError(1, err.Error())
 		return nil, err
 	}
+	return &quicConn{Connection: conn, Stream: stream}, nil
+}
 
-	if _, err := doClientHandshake(stream, &RelayRequest{Type: Dial, Payload: channel}); err != nil {
-		conn.CloseWithError(1, err.Error())
+func newClientQuicBasedSession(dialer func() (net.Conn, error), channel string) (Session, error) {
+	qconn, err := dialer()
+	if err != nil {
+		return nil, err
+	}
+	var conn quic.Connection
+	if quicConn, ok := qconn.(*quicConn); ok {
+		conn = quicConn.Connection
+	} else {
+		return nil, fmt.Errorf("invalid dialer")
+	}
+	if _, err := doClientHandshake(qconn, &RelayRequest{Type: Dial, Payload: channel}); err != nil {
+		qconn.Close()
 		return nil, err
 	}
 
-	sessionInfo, err := getQuicChannelInfo(address, channel, tlsConfig, quicConfig)
+	sessionInfo, err := getChannelInfo(dialer, channel)
 	if err != nil {
 		log.Printf("Failed to obtain session info for %s: %v", channel, err)
 		sessionInfo = nil
