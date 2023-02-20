@@ -203,15 +203,13 @@ func newCryptoConn(raw net.Conn, key []byte) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	rIv := make([]byte, block.BlockSize())
-	wIv := make([]byte, block.BlockSize())
 	return &cryptoConn{
 		StreamReader: &cipher.StreamReader{
-			S: cipher.NewCFBEncrypter(block, rIv),
+			S: cipher.NewCFBEncrypter(block, make([]byte, block.BlockSize())),
 			R: raw,
 		},
 		StreamWriter: &cipher.StreamWriter{
-			S: cipher.NewCFBDecrypter(block, wIv),
+			S: cipher.NewCFBDecrypter(block, make([]byte, block.BlockSize())),
 			W: raw,
 		},
 		rawConn: raw,
