@@ -300,7 +300,7 @@ func TestDialerUpgradeSessionBlockedByListenerDirectAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	directListenerAdapter := corenet.WithListener(lis, []string{fmt.Sprintf("tcp://%s", lis.Addr().String())})
+	directListenerAdapter := corenet.WithListener(lis, []string{fmt.Sprintf("tcp://%s?random=parm", lis.Addr().String())})
 	clientListener := corenet.NewMultiListener(directListenerAdapter, clientListenerAdapter)
 	defer clientListener.Close()
 	wg := sync.WaitGroup{}

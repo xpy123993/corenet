@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/pion/dtls/v2"
+	"github.com/pkg/errors"
 	"github.com/quic-go/quic-go"
 )
 
@@ -420,10 +421,16 @@ func (d *Dialer) getRelayDialer(uri *url.URL) (func() (net.Conn, error), error) 
 	return nil, fmt.Errorf("unknown protocol: %s", uri.String())
 }
 
-// createConnection is lock-free.
+// createConnection has no lock inside.
 func (d *Dialer) createConnection(address string, channel string) (Session, error) {
-	if blocked, exists := d.connectionAddressBlocklist[address]; exists && blocked {
-		return nil, fmt.Errorf("address is in direct access blocklist")
+	sessionID, err := parseSessionID(address)
+	if err != nil {
+		return nil, errors.WithMessagef(err, "cannot parse listener address: %s", address)
+	}
+	if strings.HasPrefix(sessionID, "tcp://") || strings.HasPrefix(sessionID, "udp://") {
+		if blocked, exists := d.connectionAddressBlocklist[sessionID]; exists && blocked {
+			return nil, fmt.Errorf("address is in direct access blocklist")
+		}
 	}
 	uri, err := url.Parse(address)
 	if err != nil {

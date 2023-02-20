@@ -169,8 +169,6 @@ func (c *bufferedConn) WriteTo(writer io.Writer) (int64, error) {
 }
 
 type cryptoConn struct {
-	readerMu sync.Mutex
-	writerMu sync.Mutex
 	*cipher.StreamReader
 	*cipher.StreamWriter
 	rawConn net.Conn
@@ -184,18 +182,6 @@ func (c *cryptoConn) SetWriteDeadline(t time.Time) error { return c.rawConn.SetW
 func (c *cryptoConn) Close() error {
 	c.StreamWriter.Close()
 	return c.rawConn.Close()
-}
-
-func (c *cryptoConn) Read(b []byte) (int, error) {
-	c.readerMu.Lock()
-	defer c.readerMu.Unlock()
-	return c.StreamReader.Read(b)
-}
-
-func (c *cryptoConn) Write(b []byte) (int, error) {
-	c.writerMu.Lock()
-	defer c.writerMu.Unlock()
-	return c.StreamWriter.Write(b)
 }
 
 func newCryptoConn(raw net.Conn, key []byte) (net.Conn, error) {
