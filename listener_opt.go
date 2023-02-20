@@ -2,6 +2,7 @@ package corenet
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/url"
@@ -156,14 +157,18 @@ func CreateListenerFallbackURLAdapter(RelayServerURL string, Channel string, Opt
 	}
 }
 
-func generateDirectAccessAddresses(protocol string, port int) ([]string, error) {
+func generateDirectAccessAddresses(protocol string, port int, key []byte) ([]string, error) {
 	addresses, err := getAllAccessibleIPs()
 	if err != nil {
 		return nil, err
 	}
 	addressWithProtocol := make([]string, 0, len(addresses))
 	for _, address := range addresses {
-		addressWithProtocol = append(addressWithProtocol, fmt.Sprintf("%s://%s:%d", protocol, address, port))
+		addr := fmt.Sprintf("%s://%s:%d", protocol, address, port)
+		if len(key) > 0 {
+			addr += "?key=" + base64.RawURLEncoding.EncodeToString(key)
+		}
+		addressWithProtocol = append(addressWithProtocol, addr)
 	}
 	return addressWithProtocol, nil
 }
@@ -174,7 +179,7 @@ func CreateListenerTCPPortAdapter(port int) (ListenerAdapter, error) {
 	if err != nil {
 		return nil, err
 	}
-	addresses, err := generateDirectAccessAddresses("tcp", lis.Addr().(*net.TCPAddr).Port)
+	addresses, err := generateDirectAccessAddresses("tcp", lis.Addr().(*net.TCPAddr).Port, nil)
 	if err != nil {
 		lis.Close()
 		return nil, err
@@ -182,12 +187,31 @@ func CreateListenerTCPPortAdapter(port int) (ListenerAdapter, error) {
 	return WithListener(lis, addresses), nil
 }
 
+// CreateListenerTCPPortAdapter creates a listener adapter listening on local port `port`.
+func CreateListenerAESTCPPortAdapter(port int, key []byte) (ListenerAdapter, error) {
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return nil, err
+	}
+	addresses, err := generateDirectAccessAddresses("tcp", lis.Addr().(*net.TCPAddr).Port, key)
+	if err != nil {
+		lis.Close()
+		return nil, err
+	}
+	return WithListener(&hookedListener{Listener: lis, hook: func(hl *hookedListener, c net.Conn, err error) (net.Conn, error) {
+		if err != nil {
+			return nil, err
+		}
+		return newCryptoConn(c, key)
+	}}, addresses), nil
+}
+
 func CreateListenerUDPPortAdapter(port int) (ListenerAdapter, error) {
 	lis, err := udp.Listen("udp", &net.UDPAddr{Port: port})
 	if err != nil {
 		return nil, err
 	}
-	addresses, err := generateDirectAccessAddresses("udp", lis.Addr().(*net.UDPAddr).Port)
+	addresses, err := generateDirectAccessAddresses("udp", lis.Addr().(*net.UDPAddr).Port, nil)
 	if err != nil {
 		lis.Close()
 		return nil, err

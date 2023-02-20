@@ -3,6 +3,7 @@ package corenet
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net"
@@ -143,8 +144,8 @@ func parseSessionID(URI string) (string, error) {
 	return sessionURL.String(), nil
 }
 
-func newClientDirectSession(network, address string) (Session, error) {
-	conn, err := net.DialTimeout(network, address, 3*time.Second)
+func newClientDirectSession(dialer func() (net.Conn, error)) (Session, error) {
+	conn, err := dialer()
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +159,7 @@ func newClientDirectSession(network, address string) (Session, error) {
 	trackerConns := make([]net.Conn, 0)
 	session := clientSession{
 		dialer: func() (net.Conn, error) {
-			conn, err := net.DialTimeout(network, address, 3*time.Second)
+			conn, err := dialer()
 			if err != nil {
 				return nil, err
 			}
@@ -171,7 +172,7 @@ func newClientDirectSession(network, address string) (Session, error) {
 			return clientConn, nil
 		},
 		infoFn: func() (*SessionInfo, error) {
-			conn, err := net.DialTimeout(network, address, 3*time.Second)
+			conn, err := dialer()
 			if err != nil {
 				return nil, err
 			}
@@ -438,7 +439,22 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 	}
 	switch uri.Scheme {
 	case "tcp", "udp":
-		return newClientDirectSession(uri.Scheme, uri.Host)
+		return newClientDirectSession(func() (net.Conn, error) {
+			conn, err := net.DialTimeout(uri.Scheme, uri.Host, 3*time.Second)
+			if err == nil && len(uri.Query().Get("key")) > 0 {
+				if uri.Scheme == "udp" {
+					conn.Close()
+					return nil, fmt.Errorf("AES on unreliable protocol is not implemented")
+				}
+				dec, err := base64.RawURLEncoding.DecodeString(uri.Query().Get("key"))
+				if err != nil {
+					conn.Close()
+					return nil, err
+				}
+				return newCryptoConn(conn, dec)
+			}
+			return conn, err
+		})
 	case "ttf", "ktf", "udf":
 		dialer, err := d.getRelayDialer(uri)
 		if err != nil {

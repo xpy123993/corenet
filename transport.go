@@ -2,6 +2,8 @@ package corenet
 
 import (
 	"bufio"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/tls"
 	"io"
 	"log"
@@ -159,4 +161,38 @@ func (c *bufferedConn) Read(b []byte) (int, error) {
 
 func (c *bufferedConn) WriteTo(writer io.Writer) (int64, error) {
 	return c.Reader.WriteTo(writer)
+}
+
+type cryptoConn struct {
+	*cipher.StreamReader
+	*cipher.StreamWriter
+	rawConn net.Conn
+}
+
+func (c *cryptoConn) LocalAddr() net.Addr                { return c.rawConn.LocalAddr() }
+func (c *cryptoConn) RemoteAddr() net.Addr               { return c.rawConn.RemoteAddr() }
+func (c *cryptoConn) SetDeadline(t time.Time) error      { return c.rawConn.SetDeadline(t) }
+func (c *cryptoConn) SetReadDeadline(t time.Time) error  { return c.rawConn.SetReadDeadline(t) }
+func (c *cryptoConn) SetWriteDeadline(t time.Time) error { return c.rawConn.SetWriteDeadline(t) }
+func (c *cryptoConn) Close() error {
+	c.StreamWriter.Close()
+	return c.rawConn.Close()
+}
+
+func newCryptoConn(raw net.Conn, key []byte) (net.Conn, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	return &cryptoConn{
+		StreamReader: &cipher.StreamReader{
+			S: cipher.NewCFBEncrypter(block, make([]byte, aes.BlockSize)),
+			R: raw,
+		},
+		StreamWriter: &cipher.StreamWriter{
+			S: cipher.NewCFBDecrypter(block, make([]byte, aes.BlockSize)),
+			W: raw,
+		},
+		rawConn: raw,
+	}, nil
 }
