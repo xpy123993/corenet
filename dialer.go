@@ -427,10 +427,8 @@ func (d *Dialer) createConnection(address string, channel string) (Session, erro
 	if err != nil {
 		return nil, errors.WithMessagef(err, "cannot parse listener address: %s", address)
 	}
-	if strings.HasPrefix(sessionID, "tcp://") || strings.HasPrefix(sessionID, "udp://") {
-		if blocked, exists := d.connectionAddressBlocklist[sessionID]; exists && blocked {
-			return nil, fmt.Errorf("address is in direct access blocklist")
-		}
+	if blocked, exists := d.connectionAddressBlocklist[sessionID]; exists && blocked {
+		return nil, fmt.Errorf("address is in direct access blocklist")
 	}
 	uri, err := url.Parse(address)
 	if err != nil {

@@ -296,12 +296,19 @@ func TestDialerUpgradeSessionBlockedByListenerDirectAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	directListenerAdapter, err := corenet.CreateListenerTCPPortAdapter(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	directListenerAdapter := corenet.WithListener(lis, []string{fmt.Sprintf("tcp://%s?random=parm", lis.Addr().String())})
-	clientListener := corenet.NewMultiListener(directListenerAdapter, clientListenerAdapter)
+	directListenerAdapter2, err := corenet.CreateListenerAESTCPPortAdapter(0, make([]byte, 24))
+	if err != nil {
+		t.Fatal(err)
+	}
+	directListenerAdapter3, err := corenet.CreateListenerUDPPortAdapter(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientListener := corenet.NewMultiListener(directListenerAdapter, directListenerAdapter2, directListenerAdapter3, clientListenerAdapter)
 	defer clientListener.Close()
 	wg := sync.WaitGroup{}
 	wg.Add(1)
