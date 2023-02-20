@@ -264,7 +264,8 @@ func (d *dialerSession) unsafeUpgradeConnection() {
 				if err == nil {
 					needUpdate = strings.Join(d.channelAddresses, ",") != strings.Join(info.Addresses, ",")
 					d.channelAddresses = info.Addresses
-				} else {
+				} else if !strings.HasPrefix(address, "udp://") && !strings.HasPrefix(address, "udf://") {
+					// If the connection is not lossy, an info update failure will close the session.
 					if d.logError {
 						log.Printf("Failed to obtain connection info for %s: %v", address, err)
 					}
