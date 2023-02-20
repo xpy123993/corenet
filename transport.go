@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/pion/dtls/v2"
@@ -144,7 +143,6 @@ func convertToDTLSConfig(config *tls.Config) *dtls.Config {
 // bufferedConn is for packet conn to avoid dropping bytes while parsing.
 type bufferedConn struct {
 	net.Conn
-	mu sync.Mutex
 	*bufio.Reader
 }
 
@@ -152,19 +150,11 @@ func newBufferedConn(raw net.Conn) net.Conn {
 	return &bufferedConn{Conn: raw, Reader: bufio.NewReader(raw)}
 }
 
-func (c *bufferedConn) Close() error {
-	return c.Conn.Close()
-}
-
 func (c *bufferedConn) Read(b []byte) (int, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	return c.Reader.Read(b)
 }
 
 func (c *bufferedConn) WriteTo(writer io.Writer) (int64, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	return c.Reader.WriteTo(writer)
 }
 
@@ -180,8 +170,7 @@ func (c *cryptoConn) SetDeadline(t time.Time) error      { return c.rawConn.SetD
 func (c *cryptoConn) SetReadDeadline(t time.Time) error  { return c.rawConn.SetReadDeadline(t) }
 func (c *cryptoConn) SetWriteDeadline(t time.Time) error { return c.rawConn.SetWriteDeadline(t) }
 func (c *cryptoConn) Close() error {
-	c.StreamWriter.Close()
-	return c.rawConn.Close()
+	return c.StreamWriter.Close()
 }
 
 func newCryptoConn(raw net.Conn, key []byte) (net.Conn, error) {

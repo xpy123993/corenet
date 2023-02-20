@@ -264,15 +264,21 @@ func (d *dialerSession) unsafeUpgradeConnection() {
 				if err == nil {
 					needUpdate = strings.Join(d.channelAddresses, ",") != strings.Join(info.Addresses, ",")
 					d.channelAddresses = info.Addresses
-				} else if d.logError {
-					log.Printf("Failed to obtain connection info for %s: %v", address, err)
+				} else {
+					if d.logError {
+						log.Printf("Failed to obtain connection info for %s: %v", address, err)
+					}
+					// If info contains error, this session is unlikely to be safe.
+					d.session.Close()
+					continue
 				}
 				if needUpdate {
 					d.unsafeUpgradeConnection()
 				}
 			}
 			return
-		} else if d.logError {
+		}
+		if d.logError {
 			log.Printf("Failed to create connection for %s: %v", address, err)
 		}
 	}
