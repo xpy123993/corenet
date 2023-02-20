@@ -270,6 +270,7 @@ func (d *dialerSession) unsafeUpgradeConnection() {
 					}
 					// If info contains error, this session is unlikely to be safe.
 					d.session.Close()
+					d.session = nil
 					continue
 				}
 				if needUpdate {
