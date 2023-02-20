@@ -51,7 +51,7 @@ func listenerDialerRoutine(t *testing.T, relayServerAddr, expectSessionID string
 	if err != nil {
 		t.Error(err)
 	}
-	if !strings.Contains(expectSessionID, sessionID) {
+	if !strings.HasPrefix(sessionID, expectSessionID) {
 		t.Errorf("expect %s, got %v", expectSessionID, sessionID)
 	}
 }

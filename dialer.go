@@ -140,7 +140,6 @@ func parseSessionID(URI string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	sessionURL.Path = ""
 	sessionURL.RawQuery = ""
 	return sessionURL.String(), nil
 }

@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"net"
 	"net/netip"
-	"strings"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -105,7 +104,7 @@ func WithDialerBlockMultiListener(lis net.Listener) DialerOption {
 			}
 			for _, address := range mlis.addresses {
 				sessionID, err := parseSessionID(address)
-				if err == nil && (strings.HasPrefix(sessionID, "tcp://") || strings.HasPrefix(sessionID, "udp://")) {
+				if err == nil {
 					d.connectionAddressBlocklist[sessionID] = true
 				}
 			}
