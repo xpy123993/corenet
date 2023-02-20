@@ -186,11 +186,11 @@ func newCryptoConn(raw net.Conn, key []byte) (net.Conn, error) {
 	}
 	return &cryptoConn{
 		StreamReader: &cipher.StreamReader{
-			S: cipher.NewCFBEncrypter(block, make([]byte, aes.BlockSize)),
+			S: cipher.NewCFBEncrypter(block, key),
 			R: raw,
 		},
 		StreamWriter: &cipher.StreamWriter{
-			S: cipher.NewCFBDecrypter(block, make([]byte, aes.BlockSize)),
+			S: cipher.NewCFBDecrypter(block, key),
 			W: raw,
 		},
 		rawConn: raw,

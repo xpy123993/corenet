@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/tls"
 	"flag"
 	"io"
@@ -36,6 +37,12 @@ func main() {
 			log.Printf("Relay server returns error: %v", err)
 		}
 	case "server":
+		key := make([]byte, 32)
+		rand.Read(key)
+		directAdapter, err := corenet.CreateListenerAESTCPPortAdapter(0, key)
+		if err != nil {
+			log.Fatal(err)
+		}
 		relayAdapter, err := corenet.CreateListenerFallbackURLAdapter(*relayServerURL, *channel, &corenet.ListenerFallbackOptions{TLSConfig: &tls.Config{
 			InsecureSkipVerify: true,
 			Certificates:       []tls.Certificate{cert},
@@ -43,7 +50,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		listener := corenet.NewMultiListener(relayAdapter)
+		listener := corenet.NewMultiListener(directAdapter, relayAdapter)
 		defer listener.Close()
 		for {
 			conn, err := listener.Accept()
