@@ -520,9 +520,8 @@ func (d *Dialer) GetSessionID(Channel string) (string, error) {
 	d.mu.Lock()
 	session, exists := d.channelSessions[Channel]
 	if !exists {
-		session = newDialerSession(Channel, d.channelAddresses[Channel],
-			d.fallbackAddress, d.updateChannelAddress, d.logError, d.createConnection)
-		d.channelSessions[Channel] = session
+		d.mu.Unlock()
+		return "", fmt.Errorf("unreachable")
 	}
 	d.mu.Unlock()
 	return session.ID()
