@@ -380,7 +380,7 @@ func (d *Dialer) getRelayDialer(uri *url.URL) (func() (net.Conn, error), error) 
 	case "ktf":
 		var TLSConfig tls.Config
 		if d.tlsConfig != nil {
-			TLSConfig = *d.tlsConfig
+			TLSConfig = *d.tlsConfig.Clone()
 		}
 		kcpConfig := d.kcpConfig
 		if kcpConfig == nil {
@@ -399,7 +399,7 @@ func (d *Dialer) getRelayDialer(uri *url.URL) (func() (net.Conn, error), error) 
 		}
 		var TLSConfig tls.Config
 		if d.tlsConfig != nil {
-			TLSConfig = *d.tlsConfig
+			TLSConfig = *d.tlsConfig.Clone()
 		}
 		if len(TLSConfig.ServerName) == 0 {
 			TLSConfig.ServerName = uri.Hostname()
@@ -418,7 +418,7 @@ func (d *Dialer) getRelayDialer(uri *url.URL) (func() (net.Conn, error), error) 
 	case "quicf":
 		var TLSConfig tls.Config
 		if d.tlsConfig != nil {
-			TLSConfig = *d.tlsConfig
+			TLSConfig = *d.tlsConfig.Clone()
 		}
 		TLSConfig.NextProtos = append(TLSConfig.NextProtos, "quicf")
 		return func() (net.Conn, error) {
