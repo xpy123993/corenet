@@ -149,11 +149,11 @@ func CreateRelayQuicListener(Addr string, TLSConfig *tls.Config, QuicConfig *qui
 	if err != nil {
 		return nil, err
 	}
-	return &quicListener{lis}, nil
+	return &quicListener{*lis}, nil
 }
 
 func newQuicListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, QuicConfig *quic.Config) (ListenerAdapter, error) {
-	conn, err := quic.DialAddr(Addr, TLSConfig, QuicConfig)
+	conn, err := quic.DialAddr(context.Background(), Addr, TLSConfig, QuicConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +169,7 @@ func newQuicListenerAdapter(Addr, Channel string, TLSConfig *tls.Config, QuicCon
 }
 
 func quicDialer(address string, tlsConfig *tls.Config, quicConfig *quic.Config) (*quicConn, error) {
-	conn, err := quic.DialAddr(address, tlsConfig, quicConfig)
+	conn, err := quic.DialAddr(context.Background(), address, tlsConfig, quicConfig)
 	if err != nil {
 		return nil, err
 	}
