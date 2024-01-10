@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/pion/udp/v2 v2.0.1
-	github.com/quic-go/quic-go v0.36.1
+	github.com/quic-go/quic-go v0.37.7
 	github.com/xtaci/kcp-go/v5 v5.6.2
 	github.com/xtaci/smux v1.5.24
 )
@@ -23,8 +23,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.9.5 // indirect
 	github.com/pion/dtls/v2 v2.2.6
 	github.com/pkg/errors v0.9.1
-	github.com/quic-go/qtls-go1-19 v0.3.2 // indirect
-	github.com/quic-go/qtls-go1-20 v0.2.2 // indirect
+	github.com/quic-go/qtls-go1-20 v0.3.1 // indirect
 	github.com/templexxx/cpu v0.1.0 // indirect
 	github.com/templexxx/xorsimd v0.4.2 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect
